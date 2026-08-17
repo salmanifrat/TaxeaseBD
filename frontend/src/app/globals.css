@@ -1,0 +1,208 @@
+@import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&family=Inter:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+@import "tailwindcss";
+
+/* ══════════════════════════════════════════════════════════════════
+   TaxEaseBD Color System
+   ──────────────────────────────────────────────────────────────────
+   Primary Blue    #0077B3  headings, active, primary CTA
+   Primary Dark    #005f8e  hover/pressed states
+   Accent Coral    #E05C2E  warm CTA accent, AI badges
+   Accent Teal     #1AABA8  success, secondary highlights
+   Border          #A3D1E0  card borders
+   Muted Surface   #D1E8E2  chip backgrounds, muted areas
+   Page BG         #F0F8FF  overall page background
+   Surface         #FFFFFF  cards, modals
+   Text Dark       #0D2233  primary body text  (contrast AAA on #F0F8FF)
+   Text Mid        #2E5369  subheadings         (AA on white)
+   Text Muted      #5B7D91  captions, metadata
+══════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  :root {
+    --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-bengali: 'Hind Siliguri', 'Inter', sans-serif;
+
+    /* Core palette */
+    --color-bg:          #F0F8FF;
+    --color-surface:     #FFFFFF;
+    --color-muted:       #D1E8E2;
+    --color-border:      #A3D1E0;
+    --color-primary:     #0077B3;
+    --color-primary-d:   #005f8e;
+    --color-coral:       #E05C2E;
+    --color-coral-d:     #c44b22;
+    --color-teal:        #1AABA8;
+    --color-teal-d:      #13877f;
+    --color-text:        #0D2233;
+    --color-text-mid:    #2E5369;
+    --color-text-muted:  #5B7D91;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--color-primary);
+    font-weight: 700;
+  }
+
+  p, li, span, label {
+    color: var(--color-text);
+  }
+}
+
+.font-bengali {
+  font-family: var(--font-bengali);
+}
+
+/* ── Glass Cards ─────────────────────────────────────────────────── */
+.glass-card {
+  background: rgba(255, 255, 255, 0.80);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(163, 209, 224, 0.55);
+  box-shadow: 0 4px 24px rgba(0, 119, 179, 0.07);
+}
+
+.glass-card-hover {
+  transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-card-hover:hover {
+  transform: translateY(-3px);
+  background: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 119, 179, 0.35);
+  box-shadow: 0 12px 36px rgba(0, 119, 179, 0.13);
+}
+
+/* ── Inputs ───────────────────────────────────────────────────────── */
+.glass-input {
+  background: #FFFFFF;
+  border: 1.5px solid #A3D1E0;
+  color: #0D2233;
+  border-radius: 10px;
+  padding: 11px 14px;
+  font-size: 14px;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+.glass-input:focus {
+  border-color: #0077B3;
+  box-shadow: 0 0 0 3px rgba(0, 119, 179, 0.15);
+}
+
+.glass-input::placeholder {
+  color: #5B7D91;
+}
+
+/* ── Gradient Utilities ───────────────────────────────────────────── */
+.gradient-primary {
+  background: linear-gradient(135deg, #0077B3 0%, #005f8e 100%);
+}
+
+.gradient-coral {
+  background: linear-gradient(135deg, #E05C2E 0%, #c44b22 100%);
+}
+
+.gradient-teal {
+  background: linear-gradient(135deg, #1AABA8 0%, #13877f 100%);
+}
+
+.gradient-soft {
+  background: linear-gradient(135deg, #D1E8E2 0%, #A3D1E0 100%);
+}
+
+.gradient-text-primary {
+  background: linear-gradient(135deg, #0077B3 0%, #33aade 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Legacy aliases (keep interior views working) ────────────────── */
+.gradient-emerald {
+  background: linear-gradient(135deg, #0077B3 0%, #005f8e 100%);
+}
+
+.gradient-gold {
+  background: linear-gradient(135deg, #E05C2E 0%, #c44b22 100%);
+}
+
+.gradient-text-emerald {
+  background: linear-gradient(135deg, #33aade 0%, #0077B3 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-gold {
+  background: linear-gradient(135deg, #E05C2E 0%, #c44b22 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: #F0F8FF; }
+::-webkit-scrollbar-thumb { background: #A3D1E0; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #0077B3; }
+
+/* ══════════════════════════════════════════════════════════════════
+   Tailwind v4 @theme — remap slate & emerald to brand palette
+══════════════════════════════════════════════════════════════════ */
+@theme {
+  /* slate → cool blue-grey (used heavily in interior views) */
+  --color-slate-50:  #F0F8FF;
+  --color-slate-100: #E4F2F9;
+  --color-slate-200: #D1E8E2;
+  --color-slate-300: #A3D1E0;
+  --color-slate-400: #6ba8c4;
+  --color-slate-500: #4d8fa8;
+  --color-slate-600: #2E5369;
+  --color-slate-700: #1e4060;
+  --color-slate-800: #122c40;
+  --color-slate-900: #0D2233;
+  --color-slate-950: #071522;
+
+  /* emerald → ocean blue */
+  --color-emerald-50:  #e6f4fb;
+  --color-emerald-100: #cceaf7;
+  --color-emerald-200: #99d5ef;
+  --color-emerald-300: #66c0e7;
+  --color-emerald-400: #33aade;
+  --color-emerald-500: #0077B3;
+  --color-emerald-600: #005f8e;
+  --color-emerald-700: #004a70;
+  --color-emerald-800: #003452;
+  --color-emerald-900: #001f33;
+  --color-emerald-950: #000f1a;
+
+  /* amber → coral (used by AssistantView badges) */
+  --color-amber-50:  #fdf3ef;
+  --color-amber-100: #fae2d7;
+  --color-amber-200: #f5c4ae;
+  --color-amber-300: #f0a685;
+  --color-amber-400: #e8795b;
+  --color-amber-500: #E05C2E;
+  --color-amber-600: #c44b22;
+  --color-amber-700: #a03a18;
+  --color-amber-800: #7d2b10;
+  --color-amber-900: #5a1d09;
+}
+
+/* ── Focus ring for accessibility ────────────────────────────────── */
+:focus-visible {
+  outline: 2.5px solid #0077B3;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
