@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { LanguageProvider } from '@/context/LanguageContext';
+import { loadSession, clearSession, UserProfile } from '@/lib/api';
 import Navbar from '@/components/Navbar';
 import DashboardView from '@/components/DashboardView';
 import CalculatorView from '@/components/CalculatorView';
@@ -10,48 +11,69 @@ import FormsView from '@/components/FormsView';
 import MushakView from '@/components/MushakView';
 import CalendarView from '@/components/CalendarView';
 import AssistantView from '@/components/AssistantView';
+import ProfileView from '@/components/ProfileView';
 import LandingPage from '@/components/LandingPage';
-import AuthModal, { UserProfile } from '@/components/AuthModal';
+import LoginPage from '@/components/LoginPage';
+import SignupPage from '@/components/SignupPage';
+
+type Screen = 'landing' | 'login' | 'signup' | 'app';
 
 export default function Home() {
-  const [showLanding, setShowLanding] = useState<boolean>(true);
+  const [screen, setScreen] = useState<Screen>('landing');
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+
+  // Restore a previous session on load, instead of always starting logged out,
+  // and drop the returning user straight back into the dashboard.
+  useEffect(() => {
+    const session = loadSession();
+    if (session?.user) {
+      setUser(session.user);
+      setScreen('app');
+    }
+  }, []);
 
   const handleEnterApp = (view: string) => {
     setActiveTab(view);
-    setShowLanding(false);
+    setScreen('app');
   };
 
-  const handleGoHome = () => {
-    setShowLanding(true);
-  };
-
-  const handleOpenLogin = () => {
-    setAuthMode('login');
-    setIsAuthOpen(true);
-  };
-
-  const handleOpenSignup = () => {
-    setAuthMode('signup');
-    setIsAuthOpen(true);
-  };
+  const handleGoHome = () => setScreen('landing');
+  const handleOpenLogin = () => setScreen('login');
+  const handleOpenSignup = () => setScreen('signup');
 
   const handleAuthSuccess = (loggedInUser: UserProfile) => {
     setUser(loggedInUser);
-    setShowLanding(false);
+    setActiveTab('dashboard');
+    setScreen('app');
   };
 
   const handleLogout = () => {
+    clearSession();
     setUser(null);
+    setScreen('landing');
   };
+
+  if (screen === 'login') {
+    return (
+      <LanguageProvider>
+        <LoginPage onLogin={handleAuthSuccess} onGoSignup={handleOpenSignup} onGoHome={handleGoHome} />
+      </LanguageProvider>
+    );
+  }
+
+  if (screen === 'signup') {
+    return (
+      <LanguageProvider>
+        <SignupPage onSignup={handleAuthSuccess} onGoLogin={handleOpenLogin} onGoHome={handleGoHome} />
+      </LanguageProvider>
+    );
+  }
 
   return (
     <LanguageProvider>
       <div style={{ minHeight: '100vh', background: '#F0F8FF', color: '#1a2e3b', display: 'flex', flexDirection: 'column' }}>
-        {showLanding ? (
+        {screen === 'landing' ? (
           <LandingPage
             onEnterApp={handleEnterApp}
             onGoLogin={handleOpenLogin}
@@ -80,6 +102,7 @@ export default function Home() {
               {activeTab === 'mushak' && <MushakView />}
               {activeTab === 'calendar' && <CalendarView />}
               {activeTab === 'assistant' && <AssistantView />}
+              {activeTab === 'profile' && <ProfileView user={user} onUpdateUser={setUser} setActiveTab={setActiveTab} />}
             </main>
 
             {/* Footer */}
@@ -99,16 +122,7 @@ export default function Home() {
             </footer>
           </>
         )}
-
-        {/* Global Auth Modal */}
-        <AuthModal
-          isOpen={isAuthOpen}
-          onClose={() => setIsAuthOpen(false)}
-          initialMode={authMode}
-          onAuthSuccess={handleAuthSuccess}
-        />
       </div>
     </LanguageProvider>
   );
 }
-

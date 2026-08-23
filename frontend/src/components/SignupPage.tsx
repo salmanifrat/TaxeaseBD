@@ -1,0 +1,263 @@
+'use client';
+
+import React, { useState } from 'react';
+import { apiFetch, apiErrorMessage, saveSession, UserProfile } from '@/lib/api';
+
+interface SignupPageProps {
+  onSignup: (user: UserProfile) => void;
+  onGoLogin: () => void;
+  onGoHome: () => void;
+}
+
+export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPageProps) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+
+  const validate = () => {
+    if (!name.trim()) return 'Please enter your full name.';
+    if (!email.trim() || !email.includes('@')) return 'Please enter a valid email address.';
+    if (password.length < 6) return 'Password must be at least 6 characters.';
+    if (password !== confirm) return 'Passwords do not match.';
+    return '';
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const err = validate();
+    if (err) { setError(err); return; }
+    setError('');
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim(), password, name: name.trim() }),
+      });
+      if (!res.ok) {
+        setError(await apiErrorMessage(res, 'Could not create your account.'));
+        return;
+      }
+      const data = await res.json();
+      saveSession({ token: data.token, user: data.user });
+      onSignup(data.user as UserProfile);
+    } catch {
+      setError('Could not reach the TaxEaseBD server. Is the backend running on port 8000?');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getStrength = () => {
+    if (password.length === 0) return { label: '', color: '#D1E8E2', width: 0 };
+    if (password.length < 6) return { label: 'Weak', color: '#E05C2E', width: 30 };
+    if (password.length < 10) return { label: 'Fair', color: '#f5a623', width: 60 };
+    return { label: 'Strong', color: '#1AABA8', width: 100 };
+  };
+
+  const strength = getStrength();
+
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', fontFamily: "'Inter', system-ui, sans-serif",
+      background: '#F0F8FF',
+    }}>
+
+      {/* ── Left panel — brand ── */}
+      <div style={{
+        flex: '0 0 42%', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        background: 'linear-gradient(160deg, #1AABA8 0%, #0D8C89 50%, #005f8e 100%)',
+        padding: '3rem',
+        position: 'relative', overflow: 'hidden',
+      }}>
+        <div style={{ position: 'absolute', top: -100, right: -80, width: 300, height: 300, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', bottom: -60, left: -60, width: 200, height: 200, borderRadius: '50%', background: 'rgba(0,119,179,0.2)', pointerEvents: 'none' }} />
+
+        <div style={{ position: 'relative', zIndex: 1, textAlign: 'center', maxWidth: 340 }}>
+          <button onClick={onGoHome} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'inline-block', marginBottom: 28 }}>
+            <div style={{ width: 72, height: 72, borderRadius: 18, overflow: 'hidden', border: '3px solid rgba(255,255,255,0.3)', margin: '0 auto 12px', boxShadow: '0 12px 40px rgba(0,0,0,0.2)' }}>
+              <img src="/logo.jpg" alt="TaxEaseBD" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
+            <div style={{ fontWeight: 900, fontSize: 22, color: '#000000', letterSpacing: '-0.5px' }}>TaxEaseBD</div>
+          </button>
+
+          <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.8)', lineHeight: 1.65, marginBottom: 36 }}>
+            Join thousands of Bangladeshi businesses managing their taxes smarter.
+          </p>
+
+          {/* Benefits */}
+          {[
+            { icon: '✅', text: 'Free forever for individuals' },
+            { icon: '⚡', text: 'Instant tax calculations' },
+            { icon: '🔒', text: 'NBR-aligned, always accurate' },
+            { icon: '🌐', text: 'English & Bengali interface' },
+          ].map((b, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '11px 16px', borderRadius: 10, marginBottom: 8,
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              textAlign: 'left',
+            }}>
+              <span style={{ fontSize: 16 }}>{b.icon}</span>
+              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>{b.text}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Right panel — form ── */}
+      <div style={{
+        flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '3rem 2rem', overflowY: 'auto',
+      }}>
+        <div style={{ width: '100%', maxWidth: 420 }}>
+
+          <button
+            onClick={onGoHome}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: '#5B7D91', fontSize: 13, fontWeight: 500, marginBottom: 32, padding: 0 }}
+          >
+            ← Back to home
+          </button>
+
+          <h1 style={{ fontSize: 28, fontWeight: 900, color: '#0D2233', marginBottom: 6, letterSpacing: '-0.5px' }}>Create your account</h1>
+          <p style={{ fontSize: 14, color: '#5B7D91', marginBottom: 28 }}>
+            Free to join. No credit card required.
+          </p>
+
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* Name */}
+            <div>
+              <label style={labelStyle}>Full name</label>
+              <input
+                id="signup-name"
+                type="text"
+                placeholder="e.g. Rahim Uddin"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                className="glass-input"
+                style={{ marginTop: 6 }}
+                autoComplete="name"
+              />
+            </div>
+
+            {/* Email */}
+            <div>
+              <label style={labelStyle}>Email address</label>
+              <input
+                id="signup-email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="glass-input"
+                style={{ marginTop: 6 }}
+                autoComplete="email"
+              />
+            </div>
+
+            {/* Password */}
+            <div>
+              <label style={labelStyle}>Password</label>
+              <div style={{ position: 'relative', marginTop: 6 }}>
+                <input
+                  id="signup-password"
+                  type={showPass ? 'text' : 'password'}
+                  placeholder="Min. 6 characters"
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="glass-input"
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass(p => !p)}
+                  style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#5B7D91', fontSize: 12 }}
+                >
+                  {showPass ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {/* Strength bar */}
+              {password.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ height: 4, borderRadius: 4, background: '#D1E8E2', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${strength.width}%`, background: strength.color, borderRadius: 4, transition: 'all 0.3s' }} />
+                  </div>
+                  <span style={{ fontSize: 11, color: strength.color, fontWeight: 600, marginTop: 4, display: 'block' }}>{strength.label}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Confirm password */}
+            <div>
+              <label style={labelStyle}>Confirm password</label>
+              <input
+                id="signup-confirm"
+                type={showPass ? 'text' : 'password'}
+                placeholder="Re-enter password"
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                className="glass-input"
+                style={{ marginTop: 6, borderColor: confirm && confirm !== password ? '#E05C2E' : undefined }}
+                autoComplete="new-password"
+              />
+              {confirm && confirm !== password && (
+                <span style={{ fontSize: 11, color: '#E05C2E', fontWeight: 600, display: 'block', marginTop: 4 }}>Passwords don&apos;t match</span>
+              )}
+            </div>
+
+            {/* Error */}
+            {error && (
+              <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(224,92,46,0.08)', border: '1px solid rgba(224,92,46,0.3)', color: '#E05C2E', fontSize: 13, fontWeight: 500 }}>
+                {error}
+              </div>
+            )}
+
+            {/* Submit */}
+            <button
+              id="signup-submit"
+              type="submit"
+              disabled={loading}
+              style={{
+                background: loading ? '#6ba8c4' : 'linear-gradient(135deg, #1AABA8 0%, #0077B3 100%)',
+                color: '#fff', border: 'none',
+                borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 700,
+                cursor: loading ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s', marginTop: 4,
+                boxShadow: '0 4px 18px rgba(0,119,179,0.25)',
+              }}
+              onMouseOver={e => { if (!loading) e.currentTarget.style.opacity = '0.9'; }}
+              onMouseOut={e => { e.currentTarget.style.opacity = '1'; }}
+            >
+              {loading ? 'Creating account…' : 'Create Account →'}
+            </button>
+
+            <p style={{ fontSize: 11, color: '#5B7D91', textAlign: 'center', marginTop: 4, lineHeight: 1.5 }}>
+              By creating an account, you agree to our Terms of Service and Privacy Policy.
+            </p>
+          </form>
+
+          {/* Switch to login */}
+          <p style={{ textAlign: 'center', fontSize: 14, color: '#5B7D91', marginTop: 24 }}>
+            Already have an account?{' '}
+            <button
+              onClick={onGoLogin}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0077B3', fontWeight: 700, fontSize: 14, padding: 0 }}
+            >
+              Log In
+            </button>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const labelStyle: React.CSSProperties = {
+  display: 'block', fontSize: 13, fontWeight: 600, color: '#0D2233',
+};

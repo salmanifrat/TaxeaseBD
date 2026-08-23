@@ -1,19 +1,57 @@
 'use client';
 
-import React, { useState, useId } from 'react';
+import React, { useState, useId, useEffect, useRef } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
-import { 
-  Calculator, 
-  Download, 
-  CheckCircle2, 
-  AlertCircle, 
-  Building2, 
-  MapPin, 
-  DollarSign, 
+import { apiFetch } from '@/lib/api';
+import {
+  Calculator,
+  Download,
+  CheckCircle2,
+  AlertCircle,
+  Building2,
+  MapPin,
+  DollarSign,
   Layers,
-  PieChart as PieChartIcon
+  PieChart as PieChartIcon,
+  WifiOff,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+
+type EntityTypeKey = 'individual' | 'soleProp' | 'partnership' | 'llc';
+type BusinessCatKey = 'trading' | 'manufacturing' | 'service' | 'fcommerce';
+type ZoneKey = 'dscc' | 'dncc' | 'chittagong' | 'otherZone';
+type TaxCatKey = 'catGeneral' | 'catWomenSenior' | 'catDisabled' | 'catFreedomFighter';
+
+// Maps the UI's option keys to the backend's enum values (single source of
+// truth for the actual tax math now lives in backend/main.py).
+const ENTITY_TYPE_TO_API: Record<EntityTypeKey, string> = {
+  individual: 'individual',
+  soleProp: 'sole_proprietorship',
+  partnership: 'partnership',
+  llc: 'private_limited_company',
+};
+const ZONE_TO_API: Record<ZoneKey, string> = {
+  dscc: 'dhaka_south',
+  dncc: 'dhaka_north',
+  chittagong: 'chittagong',
+  otherZone: 'other',
+};
+const TAX_CAT_TO_API: Record<TaxCatKey, string> = {
+  catGeneral: 'general',
+  catWomenSenior: 'woman_or_senior_65plus',
+  catDisabled: 'disabled_or_third_gender',
+  catFreedomFighter: 'gazetted_freedom_fighter',
+};
+
+interface CalcResult {
+  income_tax_or_corporate_tax: number;
+  vat_or_turnover_tax: number;
+  vat_required: boolean;
+  trade_license_fee: number;
+  signboard_tax: number;
+  minimum_tax_applied: boolean;
+  total_estimated_liability: number;
+}
 
 export default function CalculatorView() {
   const { t, language } = useLanguage();
@@ -27,104 +65,112 @@ export default function CalculatorView() {
   const signboardId = useId();
 
   // State inputs
-  const [entityType, setEntityType] = useState<'individual' | 'soleProp' | 'partnership' | 'llc'>('soleProp');
-  const [businessCat, setBusinessCat] = useState<'trading' | 'manufacturing' | 'service' | 'fcommerce'>('trading');
-  const [zone, setZone] = useState<'dscc' | 'dncc' | 'chittagong' | 'otherZone'>('dscc');
-  const [taxCategoryState, setTaxCategoryState] = useState<'catGeneral' | 'catWomenSenior' | 'catDisabled' | 'catFreedomFighter'>('catGeneral');
+  const [entityType, setEntityType] = useState<EntityTypeKey>('soleProp');
+  const [businessCat, setBusinessCat] = useState<BusinessCatKey>('trading');
+  const [zone, setZone] = useState<ZoneKey>('dscc');
+  const [taxCategoryState, setTaxCategoryState] = useState<TaxCatKey>('catGeneral');
   const [annualTurnover, setAnnualTurnover] = useState<number>(4500000); // Default ৳45 Lakh BDT
   const [signboardSize, setSignboardSize] = useState<number>(30); // 30 sq ft default
 
-  // Rates & Lookup Tables (Verified NBR & City Corp Standards)
-  const tradeLicenseRates: Record<string, Record<string, number>> = {
-    trading: { dscc: 8000, dncc: 7500, chittagong: 6500, otherZone: 4000 },
-    manufacturing: { dscc: 15000, dncc: 14000, chittagong: 12000, otherZone: 8000 },
-    service: { dscc: 6000, dncc: 5500, chittagong: 5000, otherZone: 3500 },
-    fcommerce: { dscc: 3500, dncc: 3500, chittagong: 3000, otherZone: 2000 },
-  };
-
   const signboardRatePerSqFt = zone === 'dscc' || zone === 'dncc' ? 100 : 70;
 
-  // Calculation Logic
-  const taxFreeThresholds: Record<string, number> = {
-    catGeneral: 375000,
-    catWomenSenior: 425000,
-    catDisabled: 500000,
-    catFreedomFighter: 525000,
-  };
+  // Local fallback math - kept only so the calculator still works if the
+  // backend is briefly unreachable. It is never used silently: the UI
+  // flags it with an "offline estimate" banner (see isOffline below) so
+  // nobody mistakes it for the authoritative, single-source-of-truth result.
+  const computeLocalFallback = (): CalcResult => {
+    const taxFreeThresholds: Record<TaxCatKey, number> = {
+      catGeneral: 375000, catWomenSenior: 425000, catDisabled: 500000, catFreedomFighter: 525000,
+    };
+    const threshold = taxFreeThresholds[taxCategoryState];
+    const taxable = Math.max(0, annualTurnover - threshold);
 
-  const computeIndividualTax = (income: number, categoryKey: string) => {
-    const threshold = taxFreeThresholds[categoryKey] || 375000;
-    const taxable = Math.max(0, income - threshold);
-
-    if (taxable <= 0) return { tax: 0, minTaxApplied: false };
-
-    let remaining = taxable;
-    let tax = 0;
-
-    // Slab 1: 3,00,000 @ 10%
-    const s1 = Math.min(remaining, 300000);
-    tax += s1 * 0.10;
-    remaining -= s1;
-
-    // Slab 2: 4,00,000 @ 15%
-    if (remaining > 0) {
-      const s2 = Math.min(remaining, 400000);
-      tax += s2 * 0.15;
-      remaining -= s2;
-    }
-
-    // Slab 3: 5,00,000 @ 20%
-    if (remaining > 0) {
-      const s3 = Math.min(remaining, 500000);
-      tax += s3 * 0.20;
-      remaining -= s3;
-    }
-
-    // Slab 4: 25,00,000 @ 25%
-    if (remaining > 0) {
-      const s4 = Math.min(remaining, 2500000);
-      tax += s4 * 0.25;
-      remaining -= s4;
-    }
-
-    // Slab 5: Above @ 30%
-    if (remaining > 0) {
-      tax += remaining * 0.30;
-    }
-
+    let incomeOrCorporateTax = 0;
     let minTaxApplied = false;
-    if (tax < 5000) {
-      tax = 5000; // Flat minimum tax
-      minTaxApplied = true;
+
+    if (entityType === 'individual' || entityType === 'soleProp') {
+      let remaining = taxable;
+      let tax = 0;
+      const slabs: Array<[number, number]> = [[300000, 0.10], [400000, 0.15], [500000, 0.20], [2500000, 0.25], [Infinity, 0.30]];
+      for (const [width, rate] of slabs) {
+        const amt = Math.min(remaining, width);
+        tax += amt * rate;
+        remaining -= amt;
+        if (remaining <= 0) break;
+      }
+      if (taxable > 0 && tax < 5000) { tax = 5000; minTaxApplied = true; }
+      incomeOrCorporateTax = tax;
+    } else if (entityType === 'partnership') {
+      incomeOrCorporateTax = annualTurnover * 0.25;
+    } else {
+      incomeOrCorporateTax = annualTurnover * 0.275;
     }
 
-    return { tax, minTaxApplied };
+    const tradeLicenseRates: Record<BusinessCatKey, Record<ZoneKey, number>> = {
+      trading: { dscc: 8000, dncc: 7500, chittagong: 6500, otherZone: 4000 },
+      manufacturing: { dscc: 15000, dncc: 14000, chittagong: 12000, otherZone: 8000 },
+      service: { dscc: 6000, dncc: 5500, chittagong: 5000, otherZone: 3500 },
+      fcommerce: { dscc: 3500, dncc: 3500, chittagong: 3000, otherZone: 2000 },
+    };
+    const tradeLicenseFee = tradeLicenseRates[businessCat][zone];
+    const signboardTax = signboardSize * signboardRatePerSqFt;
+    const isVatRequired = annualTurnover > 8000000;
+    const vatOrTurnoverTax = isVatRequired ? annualTurnover * 0.15 : annualTurnover * 0.03;
+
+    return {
+      income_tax_or_corporate_tax: incomeOrCorporateTax,
+      vat_or_turnover_tax: vatOrTurnoverTax,
+      vat_required: isVatRequired,
+      trade_license_fee: tradeLicenseFee,
+      signboard_tax: signboardTax,
+      minimum_tax_applied: minTaxApplied,
+      total_estimated_liability: incomeOrCorporateTax + vatOrTurnoverTax + tradeLicenseFee + signboardTax,
+    };
   };
 
-  // Calculations
-  const tradeLicenseFee = tradeLicenseRates[businessCat]?.[zone] || 5000;
-  const signboardTax = signboardSize * signboardRatePerSqFt;
+  const [result, setResult] = useState<CalcResult>(computeLocalFallback);
+  const [isOffline, setIsOffline] = useState(false);
+  const [isCalculating, setIsCalculating] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  let incomeOrCorporateTax = 0;
-  let minTaxApplied = false;
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setIsCalculating(true);
+      try {
+        const res = await apiFetch('/api/calculate-tax', {
+          method: 'POST',
+          body: JSON.stringify({
+            entity_type: ENTITY_TYPE_TO_API[entityType],
+            annual_income_or_turnover: annualTurnover,
+            taxpayer_category: TAX_CAT_TO_API[taxCategoryState],
+            business_category: businessCat,
+            zone: ZONE_TO_API[zone],
+            signboard_size_sqft: signboardSize,
+          }),
+        });
+        if (!res.ok) throw new Error('calculation service returned an error');
+        const data: CalcResult = await res.json();
+        setResult(data);
+        setIsOffline(false);
+      } catch {
+        setResult(computeLocalFallback());
+        setIsOffline(true);
+      } finally {
+        setIsCalculating(false);
+      }
+    }, 350);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityType, businessCat, zone, taxCategoryState, annualTurnover, signboardSize]);
 
-  if (entityType === 'individual' || entityType === 'soleProp') {
-    const res = computeIndividualTax(annualTurnover, taxCategoryState);
-    incomeOrCorporateTax = res.tax;
-    minTaxApplied = res.minTaxApplied;
-  } else if (entityType === 'partnership') {
-    incomeOrCorporateTax = annualTurnover * 0.25; // 25% partnership entity rate
-  } else if (entityType === 'llc') {
-    incomeOrCorporateTax = annualTurnover * 0.275; // 27.5% corporate tax
-  }
-
-  // VAT Threshold: ৳80 Lakh (8 Million BDT)
-  const isVatRequired = annualTurnover > 8000000;
-  const vatOrTurnoverTax = isVatRequired
-    ? annualTurnover * 0.15 // 15% standard VAT
-    : annualTurnover * 0.03; // 3% turnover tax
-
-  const totalLiability = incomeOrCorporateTax + tradeLicenseFee + signboardTax + vatOrTurnoverTax;
+  const incomeOrCorporateTax = result.income_tax_or_corporate_tax;
+  const vatOrTurnoverTax = result.vat_or_turnover_tax;
+  const tradeLicenseFee = result.trade_license_fee;
+  const signboardTax = result.signboard_tax;
+  const minTaxApplied = result.minimum_tax_applied;
+  const isVatRequired = result.vat_required;
+  const totalLiability = result.total_estimated_liability;
 
   // Chart Data
   const chartData = [
@@ -148,24 +194,35 @@ export default function CalculatorView() {
             <Calculator className="w-3.5 h-3.5" />
             <span>Finance Act 2024-2026 Engine</span>
           </div>
-          <h1 className="text-2xl font-extrabold text-white">{t.calculator.title}</h1>
-          <p className="text-sm text-slate-300 mt-1 max-w-2xl">{t.calculator.subtitle}</p>
+          <h1 className="text-2xl font-extrabold text-black">{t.calculator.title}</h1>
+          <p className="text-sm text-slate-700 mt-1 max-w-2xl">{t.calculator.subtitle}</p>
         </div>
 
         <button
           onClick={handleExportPdf}
-          className="px-5 py-2.5 rounded-xl gradient-emerald text-white font-semibold text-sm shadow-lg shadow-emerald-500/20 hover:opacity-95 transition-all flex items-center space-x-2 whitespace-nowrap"
+          className="px-5 py-2.5 rounded-xl gradient-accent text-white font-semibold text-sm shadow-lg shadow-emerald-500/20 hover:opacity-95 transition-all flex items-center space-x-2 whitespace-nowrap"
         >
           <Download className="w-4 h-4" />
           <span>{t.calculator.exportPdfBtn}</span>
         </button>
       </div>
 
+      {isOffline && (
+        <div className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 text-xs font-medium">
+          <WifiOff className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            {language === 'bn'
+              ? 'ব্যাকএন্ড সার্ভারে সংযোগ করা যায়নি — এই ফলাফল অফলাইন এস্টিমেট, চূড়ান্ত নয়।'
+              : "Couldn't reach the calculation service — showing an offline estimate computed in your browser, not the server result."}
+          </span>
+        </div>
+      )}
+
       {/* Main Grid: Input Form & Results Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column (7 cols): Input Parameters */}
         <div className="lg:col-span-7 glass-card p-6 rounded-2xl border border-slate-700/60 space-y-5">
-          <h2 className="text-lg font-bold text-white flex items-center space-x-2 border-b border-slate-700/60 pb-3">
+          <h2 className="text-lg font-bold text-slate-900 flex items-center space-x-2 border-b border-slate-700/60 pb-3">
             <Layers className="w-5 h-5 text-emerald-400" />
             <span>{language === 'bn' ? 'ব্যবসায়িক তথ্য ও ক্যাটাগরি' : 'Business Parameters'}</span>
           </h2>
@@ -173,7 +230,7 @@ export default function CalculatorView() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Entity Type Dropdown */}
             <div className="space-y-1.5">
-              <label htmlFor={entityTypeId} className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+              <label htmlFor={entityTypeId} className="text-xs font-semibold text-slate-600 flex items-center space-x-1.5">
                 <Building2 className="w-3.5 h-3.5 text-emerald-400" />
                 <span>{t.calculator.entityType}</span>
               </label>
@@ -192,7 +249,7 @@ export default function CalculatorView() {
 
             {/* Business Category */}
             <div className="space-y-1.5">
-              <label htmlFor={businessCatId} className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+              <label htmlFor={businessCatId} className="text-xs font-semibold text-slate-600 flex items-center space-x-1.5">
                 <Layers className="w-3.5 h-3.5 text-blue-400" />
                 <span>{t.calculator.businessCategory}</span>
               </label>
@@ -211,7 +268,7 @@ export default function CalculatorView() {
 
             {/* City Corp Zone */}
             <div className="space-y-1.5">
-              <label htmlFor={cityCorpId} className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+              <label htmlFor={cityCorpId} className="text-xs font-semibold text-slate-600 flex items-center space-x-1.5">
                 <MapPin className="w-3.5 h-3.5 text-amber-400" />
                 <span>{t.calculator.cityCorpZone}</span>
               </label>
@@ -230,7 +287,7 @@ export default function CalculatorView() {
 
             {/* Taxpayer Category (Individual/SoleProp) */}
             <div className="space-y-1.5">
-              <label htmlFor={taxCategory} className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+              <label htmlFor={taxCategory} className="text-xs font-semibold text-slate-600 flex items-center space-x-1.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-purple-400" />
                 <span>{t.calculator.taxpayerCategory}</span>
               </label>
@@ -252,7 +309,7 @@ export default function CalculatorView() {
           {/* Revenue Slider & Input */}
           <div className="space-y-2 pt-2">
             <div className="flex items-center justify-between">
-              <label htmlFor={turnoverId} className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+              <label htmlFor={turnoverId} className="text-xs font-semibold text-slate-600 flex items-center space-x-1.5">
                 <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
                 <span>{t.calculator.annualTurnover}</span>
               </label>
@@ -280,7 +337,7 @@ export default function CalculatorView() {
           {/* Signboard Size Input */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label htmlFor={signboardId} className="text-xs font-semibold text-slate-300">
+              <label htmlFor={signboardId} className="text-xs font-semibold text-slate-600">
                 {t.calculator.signboardSize}
               </label>
               <span className="text-sm font-bold text-purple-400 font-mono">
@@ -301,35 +358,35 @@ export default function CalculatorView() {
         <div className="lg:col-span-5 space-y-6">
           {/* Main Calculation Card */}
           <div className="glass-card p-6 rounded-2xl border border-emerald-500/40 relative overflow-hidden bg-gradient-to-b from-slate-900 to-slate-900/90">
-            <h2 className="text-lg font-bold text-white flex items-center space-x-2 border-b border-slate-700/60 pb-3">
+            <h2 className="text-lg font-bold text-slate-900 flex items-center space-x-2 border-b border-slate-700/60 pb-3">
               <Calculator className="w-5 h-5 text-emerald-400" />
               <span>{t.calculator.resultHeading}</span>
             </h2>
 
             {/* Itemized Table */}
             <div className="mt-4 space-y-3 text-sm">
-              <div className="flex justify-between items-center text-slate-300">
+              <div className="flex justify-between items-center text-slate-600">
                 <span>{t.calculator.incomeTax}</span>
                 <span className="font-bold text-emerald-400 font-mono">
                   ৳ {Math.round(incomeOrCorporateTax).toLocaleString('en-IN')}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center text-slate-300">
+              <div className="flex justify-between items-center text-slate-600">
                 <span>{t.calculator.vatOrTurnoverTax}</span>
                 <span className="font-bold text-blue-400 font-mono">
                   ৳ {Math.round(vatOrTurnoverTax).toLocaleString('en-IN')}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center text-slate-300">
+              <div className="flex justify-between items-center text-slate-600">
                 <span>{t.calculator.tradeLicenseFee}</span>
                 <span className="font-bold text-amber-400 font-mono">
                   ৳ {tradeLicenseFee.toLocaleString('en-IN')}
                 </span>
               </div>
 
-              <div className="flex justify-between items-center text-slate-300">
+              <div className="flex justify-between items-center text-slate-600">
                 <span>{t.calculator.signboardTax}</span>
                 <span className="font-bold text-purple-400 font-mono">
                   ৳ {signboardTax.toLocaleString('en-IN')}
@@ -344,7 +401,7 @@ export default function CalculatorView() {
               )}
 
               <div className="border-t border-slate-700 pt-3 mt-3 flex justify-between items-center">
-                <span className="font-extrabold text-white">{t.calculator.totalLiability}</span>
+                <span className="font-extrabold text-slate-900">{t.calculator.totalLiability}</span>
                 <span className="text-xl font-extrabold text-emerald-400 font-mono">
                   ৳ {Math.round(totalLiability).toLocaleString('en-IN')}
                 </span>
@@ -367,7 +424,7 @@ export default function CalculatorView() {
 
           {/* Pie Chart Component */}
           <div className="glass-card p-5 rounded-2xl border border-slate-700/60">
-            <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center space-x-1.5">
+            <h3 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-3 flex items-center space-x-1.5">
               <PieChartIcon className="w-4 h-4 text-emerald-400" />
               <span>{t.calculator.breakdownChartTitle}</span>
             </h3>

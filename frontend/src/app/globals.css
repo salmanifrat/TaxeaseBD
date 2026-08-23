@@ -137,6 +137,22 @@
   background: linear-gradient(135deg, #E05C2E 0%, #c44b22 100%);
 }
 
+/* ── Accent buttons (top-of-page primary actions) ────────────────── */
+.gradient-accent {
+  background: linear-gradient(135deg, #00c4cc 0%, #00a3aa 100%);
+}
+
+.btn-outline-accent {
+  background: #FFFFFF;
+  color: #00949c;
+  border: 1.5px solid rgba(0, 196, 204, 0.5);
+}
+
+.btn-outline-accent:hover {
+  background: rgba(0, 196, 204, 0.08);
+  border-color: #00c4cc;
+}
+
 .gradient-text-emerald {
   background: linear-gradient(135deg, #33aade 0%, #0077B3 100%);
   -webkit-background-clip: text;
@@ -206,3 +222,16 @@
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ── Hide Next.js Dev Indicator & Bottom-Left Floating Badges ────── */
+[data-nextjs-toast],
+[data-next-badge],
+nextjs-portal,
+#next-dev-indicator,
+[class*="nextjs-toast"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+

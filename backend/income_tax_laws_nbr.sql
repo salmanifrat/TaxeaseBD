@@ -1,0 +1,723 @@
+-- ============================================================================
+-- TaxEaseBD - Database Initialization & NBR Income Tax Act 2023 (50 Statutory Laws)
+-- Designed for local XAMPP MySQL / MariaDB (Database: taxeasebd)
+-- Source: Income Tax Act 2023 (আয়কর আইন ২০২৩), National Board of Revenue (NBR), Bangladesh
+-- ============================================================================
+
+CREATE DATABASE IF NOT EXISTS `taxeasebd` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE `taxeasebd`;
+
+-- ----------------------------------------------------------------------------
+-- Table 1: Users
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `users` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `email` VARCHAR(255) NOT NULL UNIQUE,
+  `name` VARCHAR(255) NOT NULL,
+  `password_hash` VARCHAR(255) NOT NULL,
+  `tin` VARCHAR(50) DEFAULT NULL,
+  `entity_type` VARCHAR(50) DEFAULT 'individual',
+  `phone` VARCHAR(50) DEFAULT NULL,
+  `company_name` VARCHAR(255) DEFAULT NULL,
+  `business_address` TEXT DEFAULT NULL,
+  `nid` VARCHAR(50) DEFAULT NULL,
+  `tax_zone` VARCHAR(255) DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 2: Tax Calculations History
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `tax_calculations` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` INT DEFAULT NULL,
+  `entity_type` VARCHAR(50) NOT NULL,
+  `annual_income_or_turnover` DOUBLE NOT NULL,
+  `total_estimated_liability` DOUBLE NOT NULL,
+  `calculation_notes` JSON DEFAULT NULL,
+  `calculated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 3: Chat History
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `chat_history` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` INT DEFAULT NULL,
+  `user_message` TEXT NOT NULL,
+  `ai_response` TEXT NOT NULL,
+  `sources` JSON DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 4: Mushak / VAT Transactions (Mushak 6.3 & 9.1 Ledger)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `mushak_transactions` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `user_id` INT DEFAULT NULL,
+  `transaction_date` DATE NOT NULL,
+  `invoice_no` VARCHAR(100) NOT NULL,
+  `customer_name` VARCHAR(255) NOT NULL,
+  `item_description` VARCHAR(255) NOT NULL,
+  `amount` DOUBLE NOT NULL,
+  `vat_rate` DOUBLE NOT NULL DEFAULT 15.0,
+  `vat_amount` DOUBLE NOT NULL,
+  `input_credit` DOUBLE NOT NULL DEFAULT 0.0,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 5: Compliance Deadlines
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `compliance_deadlines` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `title_en` VARCHAR(255) NOT NULL,
+  `title_bn` VARCHAR(255) NOT NULL,
+  `description_en` TEXT NOT NULL,
+  `description_bn` TEXT NOT NULL,
+  `due_date` DATE NOT NULL,
+  `category` VARCHAR(50) NOT NULL,
+  `status` VARCHAR(50) DEFAULT 'pending',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- Table 6: NBR Income Tax Knowledge Base (50 Essential Provisions)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS `income_tax_laws` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `section_no` VARCHAR(100) NOT NULL,
+  `act_title` VARCHAR(255) NOT NULL,
+  `chapter_topic` VARCHAR(255) NOT NULL,
+  `content_en` TEXT NOT NULL,
+  `content_bn` TEXT NOT NULL,
+  `sro_ref` VARCHAR(255) DEFAULT NULL,
+  `effective_year` VARCHAR(50) DEFAULT '2023-2026',
+  `keywords` TEXT NOT NULL,
+  `source_url` VARCHAR(500) DEFAULT 'https://nbr.gov.bd/uploads/acts/Income_tax_act_2023.pdf'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ============================================================================
+-- DATA INSERTION: Compliance Deadlines Initial Seed Data
+-- ============================================================================
+INSERT INTO `compliance_deadlines` (`title_en`, `title_bn`, `description_en`, `description_bn`, `due_date`, `category`, `status`) VALUES
+('Mushak 9.1 Monthly VAT Return', 'মুসক ৯.১ মাসিক ভ্যাট রিটার্ন দাখিল', 'File monthly VAT return for the preceding month at NBR eVAT portal (vat.gov.bd) to avoid BDT 10,000 penalty.', '১০,০০০ টাকা জরিমানা এড়াতে NBR eVAT পোর্টালে (vat.gov.bd) পূর্ববর্তী মাসের ভ্যাট রিটার্ন দাখিল করুন।', '2026-08-15', 'VAT', 'urgent'),
+('Trade License Annual Renewal', 'ট্রেড লাইসেন্স বার্ষিক নবায়ন', 'Annual trade license renewal with local City Corporation (DSCC/DNCC/Chittagong) or Municipality without surcharge.', 'সারচার্জ ছাড়া স্থানীয় সিটি কর্পোরেশনে বার্ষিক ট্রেড লাইসেন্স নবায়ন।', '2027-06-30', 'Trade License', 'valid'),
+('Individual Income Tax Day Filing', 'ব্যক্তিগত আয়কর রিটার্ন দাখিল (ট্যাক্স ডে)', 'National Tax Day deadline for filing individual income tax returns under Income Tax Act 2023 Section 183.', 'আয়কর আইন ২০২৩ এর ১৮৩ ধারা অনুযায়ী ব্যক্তিগত আয়কর রিটার্ন দাখিলের জাতীয় ট্যাক্স ডে সময়সীমা।', '2026-11-30', 'Income Tax', 'upcoming'),
+('RJSC Form 23 & Audited Accounts', 'আরজেএসসি ফরম ২৩ ও নিরীক্ষিত হিসাবপত্র দাখিল', 'Filing of Annual Return (Form 23) and Audited Financial Statements with RJSC within 30 days of AGM for Private Limited companies.', 'প্রাইভেট লিমিটেড কোম্পানির এজিএমের ৩০ দিনের মধ্যে আরজেএসসিতে বার্ষিক রিটার্ন (ফরম ২৩) ও নীরিক্ষিত আর্থিক বিবরণী দাখিল।', '2026-12-31', 'RJSC', 'upcoming');
+
+-- ============================================================================
+-- DATA INSERTION: 50 Essential Statutory Provisions under Income Tax Act 2023
+--
+-- Reference only / manual-import convenience (e.g. importing directly via
+-- phpMyAdmin). The running backend does NOT execute this INSERT block -
+-- it seeds income_tax_laws from backend/data/income_tax_laws.py instead
+-- (see database.py: sync_income_tax_laws()), which is the authoritative
+-- source and was generated from these same 50 rows. Edit the .py file,
+-- not this block, if you want the live app's law data to change.
+-- ============================================================================
+INSERT INTO `income_tax_laws` (`section_no`, `act_title`, `chapter_topic`, `content_en`, `content_bn`, `sro_ref`, `effective_year`, `keywords`) VALUES
+
+-- SECTION 1: 2(22)
+(
+  'Section 2(22)',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Definition of Assessee',
+  'Section 2(22) defines an "Assessee" as any person by whom any tax, penalty, fine, or interest is payable under the Income Tax Act 2023, or against whom any proceedings have been initiated for assessment of income.',
+  'আয়কর আইন ২০২৩ এর ২(২২) ধারা অনুযায়ী "করদাতা" (Assessee) বলতে এমন যেকোনো ব্যক্তিকে বোঝায় যিনি এই আইনের অধীনে কোনো কর, জরিমানা, অর্থদণ্ড বা সুদ প্রদানের জন্য দায়ী, অথবা যার আয়ের কর নির্ধারণের জন্য কোনো আইনি প্রক্রিয়া শুরু হয়েছে।',
+  'Income Tax Act 2023 Sec 2(22)',
+  '2023-2026',
+  'section 2(22), definition of assessee, taxpayer, tax liability, করদাতা, ২(২২) ধারা, সংজ্ঞা, কর প্রদানকারী'
+),
+
+-- SECTION 2: 2(13)
+(
+  'Section 2(13)',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Definition of Income',
+  'Section 2(13) defines "Income" to include any profits, receipts, capital gains, tax deductions at source (TDS), or any sum deemed as income under the provisions of the Income Tax Act 2023.',
+  '২(১৩) ধারা অনুযায়ী "আয়" (Income) বলতে যেকোনো লাভ, প্রাপ্তি, মূলধনী মুনাফা, উৎসে কর কর্তন (TDS), অথবা এই আইনের বিধানাবলীর অধীন আয় বলে গণ্য যেকোনো অর্থ অন্তর্ভুক্ত করে।',
+  'Income Tax Act 2023 Sec 2(13)',
+  '2023-2026',
+  'section 2(13), definition of income, profits, capital gains, tds, আয়, ২(১৩) ধারা, আয়ের সংজ্ঞা, মুনাফা'
+),
+
+-- SECTION 3: 2(15)
+(
+  'Section 2(15)',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Tax Year / Income Year',
+  'Section 2(15) defines the "Tax Year / Income Year" as the 12-month period starting July 1st and ending June 30th for calculating taxable income and assessing tax liability.',
+  '২(১৫) ধারা অনুযায়ী "কর বছর / আয় বছর" (Tax Year / Income Year) হলো ১লা জুলাই থেকে শুরু হয়ে পরবর্তী ৩০শে জুন সমাপ্ত ১২ মাসের সময়কাল, যার ভিত্তিতে মোট করযোগ্য আয় ও কর নির্ধারণ করা হয়।',
+  'Income Tax Act 2023 Sec 2(15)',
+  '2023-2026',
+  'section 2(15), tax year, income year, july 1 to june 30, financial year, কর বছর, আয় বছর, ২(১৫) ধারা, অর্থ বছর'
+),
+
+-- SECTION 4: 3
+(
+  'Section 3',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Scope of Total Income',
+  'Section 3 establishes the rules for total taxable income: Tax residents of Bangladesh are taxed on worldwide income, whereas non-residents are taxed only on income sourced, accrued, or received within Bangladesh.',
+  '৩ ধারা অনুযায়ী মোট আয়ের আওতা নির্ধারিত হয়: বাংলাদেশের কর বাসিন্দাদের ক্ষেত্রে বিশ্বব্যাপী অর্জিত আয়ের ওপর কর ধার্য হয়, কিন্তু অ-বাসীদের ক্ষেত্রে শুধুমাত্র বাংলাদেশে অর্জিত বা প্রাপ্ত আয়ের ওপর কর ধার্য করা হয়।',
+  'Income Tax Act 2023 Sec 3',
+  '2023-2026',
+  'section 3, scope of total income, worldwide income, resident, non resident, মোট আয়ের আওতা, ৩ ধারা, অনাবাসী, প্রবাসী'
+),
+
+-- SECTION 5: 7
+(
+  'Section 7',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Residential Status',
+  'Section 7 defines criteria for individual tax residency: An individual is a tax resident if present in Bangladesh for 182+ days in a tax year, or 90 days in the current year plus 365 days over the 4 preceding years.',
+  '৭ ধারা অনুযায়ী কর রেসিডেন্সি নির্ধারিত হয়: কোনো ব্যক্তি যদি কর বছরে ১৮২ দিন বা তার বেশি বাংলাদেশে অবস্থান করেন, অথবা চলতি বছরে ৯০ দিন এবং পূর্ববর্তী ৪ বছরে মোট ৩৬৫ দিন অবস্থান করেন, তবে তিনি কর নিবাসী (Resident) হিসেবে গণ্য হবেন।',
+  'Income Tax Act 2023 Sec 7',
+  '2023-2026',
+  'section 7, residential status, tax resident, 182 days rule, 90 days, আবাসিক মর্যাদা, ৭ ধারা, নিবাসী, ট্যাক্স রেসিডেন্ট'
+),
+
+-- SECTION 6: 21
+(
+  'Section 21',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Undisclosed Foreign Assets',
+  'Section 21 mandates strict reporting of undisclosed foreign assets, offshore bank accounts, or real estate owned by Bangladeshi tax residents, carrying severe tax penalties and criminal prosecution for non-disclosure.',
+  '২১ ধারা অনুযায়ী বাংলাদেশি করদাতাদের বিদেশে অবস্থিত অপ্রকাশিত সম্পদ, অফশোর ব্যাংক হিসাব বা জমি/ফ্ল্যাটের তথ্য প্রকাশ বাধ্যতামূলক। অঘোষিত বৈদেশিক সম্পদ গোপন করলে ভারী জরিমানা ও ফৌজদারি বিচার প্রযোজ্য।',
+  'Income Tax Act 2023 Sec 21',
+  '2023-2026',
+  'section 21, undisclosed foreign assets, offshore accounts, foreign property, ২১ ধারা, অপ্রকাশিত বৈদেশিক সম্পদ, বিদেশে ব্যাংক হিসাব'
+),
+
+-- SECTION 7: 32
+(
+  'Section 32',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Heads of Income',
+  'Section 32 categorizes all taxable income into six statutory heads: Salaries/Employment, Income from House Property, Agricultural Income, Business Profits, Capital Gains, and Income from Other Sources.',
+  '৩২ ধারা অনুযায়ী করযোগ্য আয়কে ৬টি নির্দিষ্ট খাতে বিন্যস্ত করা হয়েছে: চাকরি/বেতন খাত, গৃহ-সম্পত্তি খাত, কৃষি খাত, ব্যবসা ও পেশা খাত, মূলধনী মুনাফা খাত এবং অন্যান্য উৎসের আয় খাত।',
+  'Income Tax Act 2023 Sec 32',
+  '2023-2026',
+  'section 32, heads of income, 6 heads of income, salary, business, house property, আয়ের খাতসমূহ, ৩২ ধারা, আয়ের ৬টি খাত'
+),
+
+-- SECTION 8: 33
+(
+  'Section 33',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Income from Employment',
+  'Section 33 taxes salaries, allowances, perquisites, bonuses, gratuities, and pensions derived from an employer-employee relationship, allowing standard statutory deductions.',
+  '৩৩ ধারা অনুযায়ী নিয়োগকর্তা-কর্মচারী সম্পর্কের ভিত্তিতে প্রাপ্ত বেতন, ভাতা, বোনাস, গ্র্যাচুইটি ও পেনশন চাকরি খাতের আয় হিসেবে করযোগ্য হয় এবং নির্দিষ্ট বিধিবদ্ধ ছাড় প্রযোজ্য হয়।',
+  'Income Tax Act 2023 Sec 33',
+  '2023-2026',
+  'section 33, income from employment, salary income, allowances, bonus, ৩৩ ধারা, চাকরি থেকে আয়, বেতন খাত, বোনাস'
+),
+
+-- SECTION 9: 37
+(
+  'Section 37',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Rent and Income from House Property',
+  'Section 37 governs rental payments and annual value of house property, allowing statutory repair deductions (25% for residential, 30% for commercial), municipal taxes, and mortgage interest deductions.',
+  '৩৭ ধারা অনুযায়ী গৃহ-সম্পত্তির বাৎসরিক ভাড়া ও মেরামত খরচ (আবাসিকে ২৫%, বাণিজ্যে ৩০%), পৌর কর এবং ব্যাংক ঋণের সুদ কর্তন করে মোট গৃহ-সম্পত্তি খাতের আয় নিরূপণ করা হয়।',
+  'Income Tax Act 2023 Sec 37',
+  '2023-2026',
+  'section 37, rent income, house property, 25 percent repair, 30 percent, ৩৭ ধারা, গৃহ সম্পত্তি, বাড়ি ভাড়া আয়, মেরামত খরচ'
+),
+
+-- SECTION 10: 40
+(
+  'Section 40',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Agricultural Income',
+  'Section 40 taxes income derived from agricultural cultivation, operation of farm machinery, livestock farming, and raw agricultural produce processing after allowable production costs.',
+  '৪০ ধারা অনুযায়ী ফসল চাষাবাদ, খামার পরিচালনা, গবাদিপশু পালন ও কাঁচা কৃষি প্রক্রিয়াজাতকরণ থেকে অর্জিত আয় কৃষি খাতের আয় হিসেবে উৎপাদন খরচ বাদ দিয়ে করযোগ্য হয়।',
+  'Income Tax Act 2023 Sec 40',
+  '2023-2026',
+  'section 40, agricultural income, farming profits, livestock, ৪০ ধারা, কৃষি আয়, চাষাবাদ, কৃষি খাতের কর'
+),
+
+-- SECTION 11: 45
+(
+  'Section 45',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Business Profits and Gains',
+  'Section 45 taxes net commercial profits and gains derived from any trade, commerce, manufacturing, software development, or professional service enterprise.',
+  '৪৫ ধারা অনুযায়ী যেকোনো ব্যবসা, বাণিজ্য, ম্যানুফ্যাকচারিং বা পেশাগত প্রতিষ্ঠান থেকে অর্জিত নিট বাণিজ্যিক মুনাফার ওপর ব্যবসায়িক কর ধার্য করা হয়।',
+  'Income Tax Act 2023 Sec 45',
+  '2023-2026',
+  'section 45, business profits, gains, commercial income, professional fees, ৪৫ ধারা, ব্যবসার মুনাফা, ব্যবসায়িক আয়, ট্রেড মুনাফা'
+),
+
+-- SECTION 12: 57
+(
+  'Section 57',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Capital Gains',
+  'Section 57 taxes capital gains resulting from the transfer, sale, exchange, or relinquishment of capital assets such as real estate, land, stocks, shares, and bonds.',
+  '৫৭ ধারা অনুযায়ী জমি, ফ্ল্যাট, শেয়ার বা সিকিউরিটিজের মতো মূলধনী সম্পদ বিক্রয়, হস্তান্তর বা বিনিময়ের মাধ্যমে অর্জিত মূলধনী মুনাফার ওপর কর ধার্য করা হয়।',
+  'Income Tax Act 2023 Sec 57',
+  '2023-2026',
+  'section 57, capital gains, land transfer, share sales, asset sale, ৫৭ ধারা, মূলধনী মুনাফা, জমি বিক্রি, শেয়ার বিক্রয়'
+),
+
+-- SECTION 13: 66
+(
+  'Section 66',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Income from Other Sources',
+  'Section 66 is the residual head of income taxing bank interest, savings certificates, dividends, royalties, lottery winnings, and any taxable income not covered under other heads.',
+  '৬৬ ধারা হলো আয়ের অবশিষ্ট খাত, যার অধীনে ব্যাংক আমানতের সুদ, সঞ্চয়পত্রের মুনাফা, ডিভিডেন্ড, রয়্যালটি, লটারি জয় এবং অন্যান্য খাতাভুক্ত না হওয়া আয় করযোগ্য হয়।',
+  'Income Tax Act 2023 Sec 66',
+  '2023-2026',
+  'section 66, income from other sources, dividend, interest, lottery, ৬৬ ধারা, অন্যান্য উৎসের আয়, ব্যাংক সুদ, সঞ্চয়পত্র, ডিভিডেন্ড'
+),
+
+-- SECTION 14: 73
+(
+  'Section 73',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Allowable Business Expenses',
+  'Section 73 permits taxpayers to deduct operational expenses incurred wholly and exclusively for the purpose of business or profession when calculating taxable business profit.',
+  '৭৩ ধারা অনুযায়ী ব্যবসার করযোগ্য মুনাফা গণনার সময় সম্পূর্ণ ও একচ্ছত্রভাবে ব্যবসার উদ্দেশ্যে অনূস্থিত পরিচালনা ও পরিচালন ব্যয় কর্তনযোগ্য অনুমোদন পায়।',
+  'Income Tax Act 2023 Sec 73',
+  '2023-2026',
+  'section 73, allowable business expenses, deductible expenses, operational cost, ৭৩ ধারা, অনুমোদিত ব্যবসা খরচ, ব্যবসায়িক ব্যয় ছাড়'
+),
+
+-- SECTION 15: 76
+(
+  'Section 76',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Admissibility of Depreciation',
+  'Section 76 outlines statutory depreciation allowance schedules on physical factory buildings, plant machinery, vehicles, software, and industrial equipment used in business.',
+  '৭৬ ধারা অনুযায়ী ব্যবসায় ব্যবহৃত কারখানা ভবন, যন্ত্রপাতি, যানবাহন, সফটওয়্যার এবং শিল্প সরঞ্জামের ওপর নির্ধারিত হারে অবচয় (Depreciation) সুবিধা প্রদান করা হয়।',
+  'Income Tax Act 2023 Sec 76',
+  '2023-2026',
+  'section 76, admissibility of depreciation, machinery allowance, software depreciation, ৭৬ ধারা, অবচয় ভাতা, ডেপ্রিসিয়েশন, যন্ত্রপাতি খরচ'
+),
+
+-- SECTION 16: 78
+(
+  'Section 78',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Inadmissible Expenses',
+  'Section 78 disallows tax deductions for business payments made without deducting Tax Deducted at Source (TDS) or cash payments exceeding prescribed legal thresholds.',
+  '৭৮ ধারা অনুযায়ী উৎসে কর (TDS) কর্তন ছাড়া সম্পাদিত পেমেন্ট বা আইনি সীমার অতিরিক্ত নগদে সম্পাদিত ব্যবসায়িক খরচ অ-অনুমোদিত ব্যয় (Inadmissible Expense) হিসেবে আয়ের সাথে যোগ করা হয়।',
+  'Income Tax Act 2023 Sec 78',
+  '2023-2026',
+  'section 78, inadmissible expenses, tds non compliance, cash payment limit, ৭৮ ধারা, অ-অনুমোদিত খরচ, টিডিএস অ-পালন, নগদ লেনদেন'
+),
+
+-- SECTION 17: 79
+(
+  'Section 79',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Set-off of Losses',
+  'Section 79 permits losses incurred from one head or source of income to be set off against taxable gains earned from another source within the same tax year.',
+  '৭৯ ধারা অনুযায়ী একই কর বছরে আয়ের একটি খাত বা উৎস থেকে সংঘটিত ক্ষতিকে অন্য যেকোনো খাতের অর্জিত করযোগ্য আয়ের সাথে সমন্বয় (Set-off) করা যায়।',
+  'Income Tax Act 2023 Sec 79',
+  '2023-2026',
+  'section 79, set-off of losses, loss adjustment, tax year loss, ৭৯ ধারা, ক্ষতি সমন্বয়, সেsoff অফ লসেস, ক্ষতি কর্তন'
+),
+
+-- SECTION 18: 80
+(
+  'Section 80',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Carry Forward of Business Losses',
+  'Section 80 permits unadjusted business losses to be carried forward for set-off against business profits for up to 6 consecutive assessment years.',
+  '৮০ ধারা অনুযায়ী ব্যবসার অসমায়োজিত ক্ষতি পরবর্তী টানা ৬ কর বছর পর্যন্ত জের টেনে নিয়ে (Carry Forward) ব্যবসায়িক মুনাফার সাথে সমন্বয় করা যায়।',
+  'Income Tax Act 2023 Sec 80',
+  '2023-2026',
+  'section 80, carry forward of losses, 6 assessment years, business loss carryover, ৮০ ধারা, ক্ষতি জের টানা, ৬ বছর ক্ষতি সমন্বয়'
+),
+
+-- SECTION 19: 82
+(
+  'Section 82',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Tax Credit on Investment',
+  'Section 82 grants investment tax rebates to individual taxpayers for investments in government treasury bonds, approved mutual funds, Deposit Pension Schemes (DPS), and life insurance.',
+  '৮২ ধারা অনুযায়ী সরকারি ট্রেজারি বন্ড, মিউচুয়াল ফান্ড, ডিপিএস (DPS) এবং জীবন বীমা প্রিমিয়ামে বিনিয়োগের ওপর করদাতাদের আয়কর রেয়াত (Tax Rebate) প্রদান করা হয়।',
+  'Income Tax Act 2023 Sec 82',
+  '2023-2026',
+  'section 82, tax credit on investment, investment rebate, dps rebate, life insurance, ৮২ ধারা, বিনিয়োগ কর রেয়াত, ডিপিএস, বীমা রেয়াত'
+),
+
+-- SECTION 20: 86
+(
+  'Section 86',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'TDS on Employee Salary',
+  'Section 86 mandates all employers to deduct tax at source (TDS) at average projected tax rates from monthly salary payments made to employees.',
+  '৮৬ ধারা অনুযায়ী সকল নিয়োগকর্তার দায়িত্ব হলো কর্মচারীদের মাসিক বেতন পরিশোধের সময় গড় কর হারে উৎসে আয়কর (TDS) কর্তন করা।',
+  'Income Tax Act 2023 Sec 86',
+  '2023-2026',
+  'section 86, tds on salary, payroll withholding, monthly salary tax, ৮৬ ধারা, বেতনে উৎসে কর, পেরোল ট্যাক্স, স্যালারি টিডিএস'
+),
+
+-- SECTION 21: 88
+(
+  'Section 88',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'TDS on Supply of Goods & Services',
+  'Section 88 requires specified withholding entities to deduct tax at source (TDS) on payments made to contractors, suppliers, and service providers.',
+  '৮৮ ধারা অনুযায়ী সরবরাহকারী, ঠিকাদার এবং সেবাদানকারী প্রতিষ্ঠানের পাওনা অর্থ পরিশোধকালে নির্দিষ্ট হারে উৎসে আয়কর (TDS) কর্তন করা বাধ্যতামূলক।',
+  'Income Tax Act 2023 Sec 88',
+  '2023-2026',
+  'section 88, tds on supply of goods, supplier tax withholding, service contractor, ৮৮ ধারা, পপণ্য ও সেবা সরবরাহে টিডিএস, ঠিকাদার কর'
+),
+
+-- SECTION 22: 89
+(
+  'Section 89',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'TDS on Execution of Contracts',
+  'Section 89 prescribes withholding tax rates on contractual payments executed under corporate, infrastructure, or government procurement contracts.',
+  '৮৯ ধারা অনুযায়ী সরকারি, কর্পোরেট বা অবকাঠামোগত চুক্তি বাস্তবায়নের পেমেন্টে প্রদেয় বিল থেকে নির্ধারিত হারে উৎসে আয়কর কেটে রাখার বিধান প্রদান করে।',
+  'Income Tax Act 2023 Sec 89',
+  '2023-2026',
+  'section 89, tds on execution of contracts, corporate contracts, tender withholding, ৮৯ ধারা, চুক্তি বাস্তবায়নে টিডিএস, টেন্ডার ট্যাক্স'
+),
+
+-- SECTION 23: 91
+(
+  'Section 91',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'TDS on Royalties and Franchises',
+  'Section 91 enforces mandatory withholding tax on intellectual property licensing fees, patent royalties, software license fees, and franchise royalty payments.',
+  '৯১ ধারা অনুযায়ী বুদ্ধিবৃত্তিক সম্পত্তি লাইসেন্স ফি, পেটেন্ট রয়্যালটি, সফটওয়্যার লাইসেন্স এবং ফ্র্যাঞ্চাইজি ফি প্রদানের সময় উৎসে কর কর্তন বাধ্যতামূলক।',
+  'Income Tax Act 2023 Sec 91',
+  '2023-2026',
+  'section 91, tds on royalties, franchise fees, software license withholding, ৯১ ধারা, রয়্যালটি টিডিএস, ফ্র্যাঞ্চাইজি ফি, সফটওয়্যার কর'
+),
+
+-- SECTION 24: 92
+(
+  'Section 92',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'TDS on Marketing & Advertising Services',
+  'Section 92 directs media houses, advertising agencies, and corporate entities to withhold tax on payments made for television, digital, print media, and promotional campaigns.',
+  '৯২ ধারা অনুযায়ী টিভি, ডিজিটাল, প্রিন্ট মিডিয়া ও বিজ্ঞাপন এজেন্সির বিল পরিশোধকালে নির্দিষ্ট হারে উৎসে কর (TDS) কর্তনের নির্দেশ প্রদান করা হয়েছে।',
+  'Income Tax Act 2023 Sec 92',
+  '2023-2026',
+  'section 92, tds on marketing, advertising tax withholding, media agency, ৯২ ধারা, বিজ্ঞাপনে টিডিএস, মার্কেটিং কর, মিডিয়া বিল'
+),
+
+-- SECTION 25: 102
+(
+  'Section 102',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'TDS on Bank Interest & Savings',
+  'Section 102 regulates automatic withholding tax by banks, financial institutions, and savings schemes on interest or profit paid on deposits (10% for TIN holders, 15% without TIN).',
+  '১০২ ধারা অনুযায়ী ব্যাংক ও আর্থিক প্রতিষ্ঠান আমানতের সুদের ওপর স্বয়ংক্রিয়ভাবে উৎসে কর কর্তন করে (ই-টিন থাকলে ১০%, ই-টিন না থাকলে ১৫%)।',
+  'Income Tax Act 2023 Sec 102',
+  '2023-2026',
+  'section 102, tds on bank interest, savings tax withholding, 10 percent tin, ১০২ ধারা, ব্যাংক সুদে টিডিএস, আমানতের কর, সঞ্চয়ী কর'
+),
+
+-- SECTION 26: 105
+(
+  'Section 105',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'TDS on Dividends',
+  'Section 105 mandates companies to deduct withholding tax prior to dispersing cash or stock dividends to resident and non-resident shareholders.',
+  '১০৫ ধারা অনুযায়ী কোম্পানি শেয়ারহোল্ডারদের মধ্যে নগদ বা স্টক ডিভিডেন্ড বিতরণের পূর্বে নির্ধারিত হারে উৎসে আয়কর কেটে রাখতে বাধ্য।',
+  'Income Tax Act 2023 Sec 105',
+  '2023-2026',
+  'section 105, tds on dividends, cash dividend withholding, shareholder tax, ১০৫ ধারা, ডিভিডেন্ডে টিডিএস, লভ্যাংশ কর, শেয়ারহোল্ডার'
+),
+
+-- SECTION 27: 120
+(
+  'Section 120',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Advance Tax Payment',
+  'Section 120 mandates advance quarterly tax installments for taxpayers whose estimated annual tax liability exceeds prescribed statutory threshold limits (BDT 6,00,000).',
+  '১২০ ধারা অনুযায়ী যেসব করদাতার আনুমানিক বাৎসরিক কর দায় নির্ধারিত সীমা (৬,০০,০০০ টাকা) অতিক্রম করে, তাদের ৪টি ত্রৈমাসিক কিস্তিতে অগ্রিম কর প্রদান বাধ্যতামূলক।',
+  'Income Tax Act 2023 Sec 120',
+  '2023-2026',
+  'section 120, advance tax payment, quarterly installment, advance income tax, ১২০ ধারা, অগ্রিম কর পরিশোধ, ত্রৈমাসিক কিস্তি, অগ্রিম আয়কর'
+),
+
+-- SECTION 28: 135
+(
+  'Section 135',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Proof of Source Tax Certificate',
+  'Section 135 compels all withholding entities to issue official TDS certificates to payees so they can claim tax credit in their annual tax returns.',
+  '১৩৫ ধারা অনুযায়ী উৎস কর কর্তনকারী সকল প্রতিষ্ঠানকে প্রাপকের অনুকূলে অফিসিয়াল টিডিএস সনদপত্র প্রদান করতে হবে যাতে তা বার্ষিক রিটার্নে কর ক্রেডিট হিসেবে দাবি করা যায়।',
+  'Income Tax Act 2023 Sec 135',
+  '2023-2026',
+  'section 135, proof of source tax certificate, tds certificate, tax credit claim, ১৩৫ ধারা, উৎস কর প্রত্যয়নপত্র, টিডিএস সার্টিফিকেট'
+),
+
+-- SECTION 29: 163
+(
+  'Section 163',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Minimum Tax Provisions',
+  'Section 163 imposes a baseline minimum tax on gross receipts for corporations and individuals, regardless of net profit, accounting loss, or tax exemptions.',
+  '১৬৩ ধারা অনুযায়ী কোম্পানি ও ব্যক্তির মোট প্রাপ্তির (Gross Receipts) ওপর ন্যূনতম কর (Minimum Tax) ধার্য করা হয়, লাভ-ক্ষতি নির্বিশেষে যা পরিশোধযোগ্য।',
+  'Income Tax Act 2023 Sec 163',
+  '2023-2026',
+  'section 163, minimum tax provisions, gross receipts tax, corporate minimum tax, ১৬৩ ধারা, ন্যূনতম কর, গ্রস রিসিট কর, মিনিমাম ট্যাক্স'
+),
+
+-- SECTION 30: 166
+(
+  'Section 166',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Environmental Surcharge',
+  'Section 166 imposes a sliding scale environmental surcharge on taxpayers owning multiple motor vehicles based on engine capacity (cc/kW).',
+  '১৬৬ ধারা অনুযায়ী একাধিক মোটর গাড়ির মালিক করদাতাদের ওপর ইঞ্জিনের ক্ষমতা (সিসি/কিলোওয়াট) অনুযায়ী স্কেলিং হারে পরিবেশ সারচার্জ ধার্য করা হয়।',
+  'Income Tax Act 2023 Sec 166',
+  '2023-2026',
+  'section 166, environmental surcharge, motor vehicle tax, car surcharge, ১৬৬ ধারা, পরিবেশ সারচার্জ, একাধিক গাড়ি কর, মোটর গাড়ি সারচার্জ'
+),
+
+-- SECTION 31: 170
+(
+  'Section 170',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Wealth Surcharge',
+  'Section 170 applies a progressive wealth surcharge on high-net-worth individual taxpayers based on total declared net wealth exceeding statutory thresholds (BDT 4 Crore).',
+  '১৭০ ধারা অনুযায়ী অতি-উচ্চ নিট সম্পদের (৪ কোটি টাকার অধিক) অধিকারী ব্যক্তিদের নিট সম্পদের ওপর প্রগ্রেসিভ হারে সম্পদ সারচার্জ (Wealth Surcharge) আরোপিত হয়।',
+  'Income Tax Act 2023 Sec 170',
+  '2023-2026',
+  'section 170, wealth surcharge, net wealth tax, high net worth surcharge, ১৭০ ধারা, সম্পদ সারচার্জ, নিট সম্পদ কর, সারচার্জ'
+),
+
+-- SECTION 32: 174
+(
+  'Section 174',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Tax Exemptions & Excluded Incomes',
+  'Section 174 defines specific tax-exempt income streams, including government pensions, universal pension payouts, foreign remittances, and lump-sum gratuities.',
+  '১৭৪ ধারা অনুযায়ী সুনির্দিষ্ট করমুক্ত আয়ের তালিকা প্রদান করে, যেমন সরকারি পেনশন, সর্বজনীন পেনশন প্রাপ্তি, বৈদেশিক রেমিট্যান্স এবং গ্র্যাচুইটি।',
+  'Income Tax Act 2023 Sec 174',
+  '2023-2026',
+  'section 174, tax exemptions, excluded incomes, pension exemption, remittance tax free, ১৭৪ ধারা, করমুক্ত আয়, প্রবাসীদের রেমিট্যান্স, পেনশন ছাড়'
+),
+
+-- SECTION 33: 180
+(
+  'Section 180',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Obligation to File Income Tax Return',
+  'Section 180 sets mandatory annual income tax return filing obligations for individuals, partnership firms, non-profit institutions, and corporate entities.',
+  '১৮০ ধারা অনুযায়ী করমুক্ত সীমার ঊর্ধ্বের আয়ের ব্যক্তি, ফার্ম, এনজিও ও সকল কোম্পানির জন্য বার্ষিক আয়কর রিটার্ন দাখিল করা বাধ্যতামূলক।',
+  'Income Tax Act 2023 Sec 180',
+  '2023-2026',
+  'section 180, obligation to file income tax return, return filing obligation, ১৮০ ধারা, রিটার্ন দাখিলের বাধ্যবাধকতা, আয়কর রিটার্ন'
+),
+
+-- SECTION 34: 183
+(
+  'Section 183',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Tax Day / Filing Deadlines',
+  'Section 183 defines November 30 as the standard national statutory deadline ("Tax Day") for individual income tax return submissions unless extended by NBR.',
+  '১৮৩ ধারা অনুযায়ী ব্যক্তিগত করদাতাদের জন্য ৩০শে নভেম্বর জাতীয় "ট্যাক্স ডে" বা রিটার্ন দাখিলের নির্ধারিত শেষ সময়সীমা হিসেবে সংজ্ঞায়িত করা হয়েছে।',
+  'Income Tax Act 2023 Sec 183',
+  '2023-2026',
+  'section 183, tax day, filing deadlines, november 30 deadline, ১৮৩ ধারা, ট্যাক্স ডে, ৩০শে নভেম্বর, রিটার্ন দাখিলের শেষ তারিখ'
+),
+
+-- SECTION 35: 184
+(
+  'Section 184',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Mandatory PSR (Proof of Submission of Return)',
+  'Section 184 requires individuals to present Proof of Submission of Return (PSR) to access 40+ mandatory public and commercial services including bank loans, trade licenses, and property sales.',
+  '১৮৪ ধারা অনুযায়ী ব্যাংক ঋণ অনুমোদন, ট্রেড লাইসেন্স নবায়ন, জমি রেজিস্ট্রেশনসহ ৪০টির বেশি সরকারি ও বাণিজ্যিক সেবা গ্রহণের জন্য রিটার্ন দাখিলের প্রমাণপত্র (PSR) উপস্থাপন বাধ্যতামূলক।',
+  'Income Tax Act 2023 Sec 184',
+  '2023-2026',
+  'section 184, mandatory psr, proof of submission of return, 40 services, ১৮৪ ধারা, পিএসআর, রিটার্ন দাখিলের প্রমাণপত্র, ৪০টি সেবা'
+),
+
+-- SECTION 36: 190
+(
+  'Section 190',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Statement of Assets and Liabilities',
+  'Section 190 compels taxpayers meeting asset thresholds (BDT 50 Lakh) or owning motor vehicles or foreign assets to file a detailed wealth statement (Form IT-10B) alongside income returns.',
+  '১৯০ ধারা অনুযায়ী ৫০ লাখ টাকার বেশি সম্পদের মালিক, মোটর গাড়ি বা প্রবাসে সম্পদ ধারণকারী সকল করদাতাকে রিটার্নের সাথে বিস্তারিত পরিসম্পদ ও দায়ের বিবরণী (আইটি-১০বি) দাখিল করতে হবে।',
+  'Income Tax Act 2023 Sec 190',
+  '2023-2026',
+  'section 190, statement of assets and liabilities, wealth statement, form it 10b, ১৯০ ধারা, পরিসম্পদ ও দায়ের বিবরণী, সম্পদ বিবরণী'
+),
+
+-- SECTION 37: 200
+(
+  'Section 200',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Universal Self-Assessment',
+  'Section 200 allows taxpayers to file returns under Universal Self-Assessment, accepting declared income at submission subject to post-assessment risk audit.',
+  '২০০ ধারা অনুযায়ী করদাতারা ইউনিভার্সাল সেলফ-অ্যাসেসমেন্ট (স্বাভাবিক কর নির্ধারণ) পদ্ধতির অধীনে রিটার্ন জমা দিতে পারেন, যা দাখিলের পর নিরীক্ষা সাপেক্ষে গৃহীত হয়।',
+  'Income Tax Act 2023 Sec 200',
+  '2023-2026',
+  'section 200, universal self assessment, self return filing, ২০০ ধারা, ইউনিভার্সাল সেলফ অ্যাসেসমেন্ট, স্ব-কর নির্ধারণ'
+),
+
+-- SECTION 38: 212
+(
+  'Section 212',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Tax Audit Selection',
+  'Section 212 authorizes the NBR to select submitted self-assessment tax returns for detailed compliance risk audits based on automated risk parameters.',
+  '২১২ ধারা অনুযায়ী জাতীয় রাজস্ব বোর্ড (NBR) ঝুঁকি পরিমাপক সূচকের ভিত্তিতে সুনির্দিষ্ট কিছু কর রিটার্ন বিস্তারিত অডিট ও নিরীক্ষার জন্য নির্বাচন করার বিধান প্রদান করে।',
+  'Income Tax Act 2023 Sec 212',
+  '2023-2026',
+  'section 212, tax audit selection, nbr audit selection, risk audit, ২১২ ধারা, কর অডিট নির্বাচন, রিটার্ন অডিট, আয়কর নিরীক্ষা'
+),
+
+-- SECTION 39: 213
+(
+  'Section 213',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Best Judgment Assessment',
+  'Section 213 empowers the Deputy Commissioner of Taxes (DCT) to estimate and assess tax liability under best judgment if an assessee fails to submit returns or accounting books.',
+  '২১৩ ধারা অনুযায়ী কোনো করদাতা রিটার্ন বা হিসাব বই দাখিলে ব্যর্থ হলে উপ-কর কমিশনার (DCT) বেস্ট জাজমেন্ট অ্যাসেসমেন্ট (সেরা বিচার কর নিরূপণ) করতে পারবেন।',
+  'Income Tax Act 2023 Sec 213',
+  '2023-2026',
+  'section 213, best judgment assessment, dct assessment, failure to file, ২১৩ ধারা, বেস্ট জাজমেন্ট অ্যাসেসমেন্ট, সেরা বিচার কর নিরূপণ'
+),
+
+-- SECTION 40: 214
+(
+  'Section 214',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Re-assessment of Escaped Income',
+  'Section 214 authorizes tax authorities to re-open past assessments within statutory time limits if taxable income or assets were hidden, understated, or escaped assessment.',
+  '২১৪ ধারা অনুযায়ী পূর্ববর্তী বছরের করযোগ্য আয় বা সম্পদ গোপন করা হয়ে থাকলে বা কর এড়িয়ে গিয়ে থাকলে রাজস্ব কর্তৃপক্ষ অতীতের অ্যাসেসমেন্ট পুনর্নিরীক্ষার (Re-assessment) ক্ষমতা রাখে।',
+  'Income Tax Act 2023 Sec 214',
+  '2023-2026',
+  'section 214, re-assessment of escaped income, re opening assessment, tax evasion, ২১৪ ধারা, গোপন করা আয় পুনর্নিরীক্ষা, এড়ানো কর'
+),
+
+-- SECTION 41: 220
+(
+  'Section 220',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Notice of Demand',
+  'Section 220 authorizes tax authorities to issue a formal Notice of Demand specifying the sum payable as tax, penalty, fine, or interest and fixing the payment deadline.',
+  '২২০ ধারা অনুযায়ী কর কর্তৃপক্ষকে করদাতা বরাবর প্রদেয় কর, জরিমানা বা সুদের অর্থ উল্লেখ করে আনুষ্ঠানিকভাবে নোটিশ অফ ডিমান্ড (Notice of Demand) জারির ক্ষমতা প্রদান করে।',
+  'Income Tax Act 2023 Sec 220',
+  '2023-2026',
+  'section 220, notice of demand, tax demand notice, payment notice, ২২০ ধারা, নোটিশ অফ ডিমান্ড, কর দাবিনামা, প্রদেয় কর নোটিশ'
+),
+
+-- SECTION 42: 265
+(
+  'Section 265',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Penalty for Non-Filing of Return',
+  'Section 265 imposes monetary penalties for failing to submit tax returns within statutory deadlines (BDT 5,000 lump sum or 10% of tax payable).',
+  '২৬৫ ধারা অনুযায়ী নির্ধারিত সময়ের মধ্যে আয়কর রিটার্ন দাখিলে ব্যর্থতার জন্য এককালীন ৫,০০০ টাকা অথবা মোট দেয় করের ১০% অর্থদণ্ড বা জরিমানা আরোপের বিধান রয়েছে।',
+  'Income Tax Act 2023 Sec 265',
+  '2023-2026',
+  'section 265, penalty for non filing of return, late filing penalty, ২৬৫ ধারা, রিটার্ন না দেওয়ার জরিমানা, বিলম্বে দাখিল অর্থদণ্ড'
+),
+
+-- SECTION 43: 268
+(
+  'Section 268',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Penalty for Concealment of Income',
+  'Section 268 applies heavy monetary penalties (often up to 100% of tax evaded) for deliberate suppression of income, fake expense claims, or hiding assets.',
+  '২৬৮ ধারা অনুযায়ী ইচ্ছাকৃতভাবে আয় গোপন করা, ভুয়া খরচ দাবি করা বা সম্পদ লুকানোর জন্য এড়ানো করের ১০০% পর্যন্ত ভারী অর্থদণ্ড ও জরিমানা ধার্য করা হয়।',
+  'Income Tax Act 2023 Sec 268',
+  '2023-2026',
+  'section 268, penalty for concealment of income, tax fraud penalty, 100 percent penalty, ২৬৮ ধারা, আয় গোপন করার জরিমানা, ভুয়া খরচ'
+),
+
+-- SECTION 44: 270
+(
+  'Section 270',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Penalty for Failure to Deduct TDS',
+  'Section 270 holds withholding agents personally liable with monetary penalties for failing to collect, deduct, or deposit source tax (TDS) to the government treasury.',
+  '২৭০ ধারা অনুযায়ী উৎসে কর (TDS) কর্তন না করলে বা সরকারি কোষাগারে জমা না দিলে কর কর্তনকারী ব্যক্তি বা প্রতিষ্ঠানকে ব্যক্তিগতভাবে জরিমানার সম্মুখীন হতে হবে।',
+  'Income Tax Act 2023 Sec 270',
+  '2023-2026',
+  'section 270, penalty for failure to deduct tds, withholding agent liability, ২৭০ ধারা, টিডিএস কর্তন না করার জরিমানা, উৎস কর জরিমানা'
+),
+
+-- SECTION 45: 275
+(
+  'Section 275',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Delay Interest for Untimely Payment',
+  'Section 275 charges monthly delay interest (2% per month) on overdue or unpaid tax balances calculated from the Tax Day deadline until full settlement.',
+  '২৭৫ ধারা অনুযায়ী অপরিশোধিত বা বিলম্বিত কর বকেয়ার ওপর ট্যাক্স ডে থেকে হিসাব করে প্রতি মাসে ২% হারে বিলম্ব সুদ (Delay Interest) আদায় করা হয়।',
+  'Income Tax Act 2023 Sec 275',
+  '2023-2026',
+  'section 275, delay interest for untimely payment, 2 percent interest, late tax interest, ২৭৫ ধারা, বকেয়া করের বিলম্ব সুদ, ২% সুদ'
+),
+
+-- SECTION 46: 295
+(
+  'Section 295',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Appeal to Commissioner (Appeals)',
+  'Section 295 enables aggrieved taxpayers to file a first-stage formal legal appeal against Deputy Commissioner of Taxes (DCT) assessment orders within 60 days.',
+  '২৯৫ ধারা অনুযায়ী উপ-কর কমিশনারের (DCT) কর নিরূপণ আদেশের বিরুদ্ধে ক্ষুব্ধ করদাতা ৬০ দিনের মধ্যে কর কমিশনার (আপিল) বরাবরে প্রথম ধাপের আইনি আপিল দায়ের করতে পারেন।',
+  'Income Tax Act 2023 Sec 295',
+  '2023-2026',
+  'section 295, appeal to commissioner appeals, first stage tax appeal, dct appeal, ২৯৫ ধারা, কর কমিশনার আপিল, প্রথম আপিল'
+),
+
+-- SECTION 47: 300
+(
+  'Section 300',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Appeal to Taxes Appellate Tribunal',
+  'Section 300 establishes the independent Taxes Appellate Tribunal as the second-tier judicial authority for resolving tax disputes between taxpayers and revenue authorities.',
+  '৩০০ ধারা অনুযায়ী করদাতা ও রাজস্ব কর্তৃপক্ষের মধ্যকার বিরোধ নিষ্পত্তিতে স্বাধীন দ্বিতীয় ধাপের বিচারিক কর্তৃপক্ষ হিসেবে "কর আপিলাত ট্রাইব্যুনাল" গঠন ও আপিল দায়েরের বিধান রয়েছে।',
+  'Income Tax Act 2023 Sec 300',
+  '2023-2026',
+  'section 300, appeal to taxes appellate tribunal, second tier tribunal appeal, ৩০০ ধারা, কর আপিলাত ট্রাইব্যুনাল, ট্রাইব্যুনাল আপিল'
+),
+
+-- SECTION 48: 310
+(
+  'Section 310',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Alternative Dispute Resolution (ADR)',
+  'Section 310 provides a formal pathway for out-of-court settlement of pending tax disputes between taxpayers and the NBR through Alternative Dispute Resolution (ADR) facilitators.',
+  '৩১০ ধারা অনুযায়ী করদাতা ও জাতীয় রাজস্ব বোর্ডের মধ্যে অমীমাংসিত কর বিরোধ আদালত-বহির্ভূত বিকল্প বিরোধ নিষ্পত্তি (ADR) প্রক্রিয়ার মাধ্যমে দ্রুত সমাধানের সুযোগ প্রদান করে।',
+  'Income Tax Act 2023 Sec 310',
+  '2023-2026',
+  'section 310, alternative dispute resolution, adr tax settlement, out of court dispute, ৩১০ ধারা, বিকল্প বিরোধ নিষ্পত্তি, এডিআর'
+),
+
+-- SECTION 49: 330
+(
+  'Section 330',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Transfer Pricing & Arm’s Length Price',
+  'Section 330 regulates international transactions between associate enterprises, mandating the Arm’s Length Price principle to prevent multinational profit shifting and tax avoidance.',
+  '৩৩০ ধারা অনুযায়ী বহুজাতিক সহযোগী প্রতিষ্ঠানের মধ্যকার আন্তর্জাতিক লেনদেনে আর্মস লেন্থ প্রাইস (Arm’s Length Price) নীতি প্রয়োগ করে মূলধন বা মুনাফা বিদেশে পাচার রোধ করা হয়।',
+  'Income Tax Act 2023 Sec 330',
+  '2023-2026',
+  'section 330, transfer pricing, arms length price, multinational tax, profit shifting, ৩৩০ ধারা, ট্র্যান্সফার প্রাইসিং, আর্মস লেন্থ প্রাইস'
+),
+
+-- SECTION 50: 345
+(
+  'Section 345',
+  'Income Tax Act 2023 (আয়কর আইন ২০২৩)',
+  'Rule-Making Power & English Text Authenticity',
+  'Section 345 authorizes the NBR and Government to issue official gazette notifications, tax rules (SROs), and authentic English translations of tax laws for judicial enforceability.',
+  '৩৪৫ ধারা অনুযায়ী জাতীয় রাজস্ব বোর্ড ও সরকারকে কর বিধিমালা (SRO) জারি এবং আইনি প্রয়োগের জন্য আয়কর আইনের নির্ভরযোগ্য ইংরেজি পাঠ প্রকাশের ক্ষমতা প্রদান করে।',
+  'Income Tax Act 2023 Sec 345',
+  '2023-2026',
+  'section 345, rule making power, english text authenticity, sro rules, nbr gazette, ৩৪৫ ধারা, বিধিমালা প্রণয়ন ক্ষমতা, নির্ভরযোগ্য ইংরেজি পাঠ'
+);

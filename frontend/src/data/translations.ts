@@ -13,6 +13,7 @@ export const translations = {
       mushak: "Mushak Ledgers (VAT)",
       calendar: "Compliance Calendar",
       assistant: "AI Tax Assistant",
+      profile: "My Profile",
     },
     languageToggle: "বাংলা",
     themeToggle: "Theme",
@@ -181,7 +182,7 @@ export const translations = {
 
     // AI Assistant
     assistant: {
-      title: "Bilingual AI Compliance Assistant (RAG)",
+      title: "Bilingual AI Compliance Assistant",
       subtitle: "Ask legal & tax questions grounded in verified NBR Circulars, Finance Acts (2022–2025), and Companies Act 1994.",
       placeholder: "Ask a tax or business question in English or বাংলা...",
       sendBtn: "Ask Assistant",
@@ -207,6 +208,7 @@ export const translations = {
       mushak: "মুসক লেজার (ভ্যাট)",
       calendar: "কমপ্লায়েন্স ক্যালেন্ডার",
       assistant: "এআই ট্যাক্স অ্যাসিস্ট্যান্ট",
+      profile: "মাই প্রোফাইল",
     },
     languageToggle: "English",
     themeToggle: "থিম",
@@ -375,7 +377,7 @@ export const translations = {
 
     // AI Assistant
     assistant: {
-      title: "দ্বিভাষিক এআই ট্যাক্স অ্যাসিস্ট্যান্ট (RAG)",
+      title: "দ্বিভাষিক এআই ট্যাক্স অ্যাসিস্ট্যান্ট",
       subtitle: "এনবিআর সার্কুলার, ফাইনান্স অ্যাক্ট ও কোম্পানি আইন ১৯৯৪ এর উপর ভিত্তি করে আপনার আইনি প্রশ্নের সঠিক উত্তর নিন।",
       placeholder: "আপনার ট্যাক্স বা ব্যবসায়িক প্রশ্নটি বাংলায় বা ইংরেজিতে লিখুন...",
       sendBtn: "প্রশ্ন জমা দিন",
