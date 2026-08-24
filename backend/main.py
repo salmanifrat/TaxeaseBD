@@ -1268,8 +1268,10 @@ def send_smtp_email(to_email: str, subject: str, body_text: str, otp_code: str =
         try:
             import json
             import urllib.request
+            import urllib.error
+            sender_email = os.getenv("BREVO_SENDER_EMAIL", "salman.ifrat@northsouth.edu")
             req_data = json.dumps({
-                "sender": {"name": "TaxEaseBD Verification", "email": "noreply@taxeasebd.app"},
+                "sender": {"name": "TaxEaseBD Verification", "email": sender_email},
                 "to": [{"email": to_email}],
                 "subject": subject,
                 "textContent": body_text,
@@ -1278,15 +1280,19 @@ def send_smtp_email(to_email: str, subject: str, body_text: str, otp_code: str =
                 "https://api.brevo.com/v3/smtp/email",
                 data=req_data,
                 headers={
-                    "api-key": brevo_key,
+                    "api-key": brevo_key.strip(),
                     "Content-Type": "application/json",
+                    "accept": "application/json",
                 },
                 method="POST"
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
-                if resp.status in (200, 201):
-                    print(f"✅ [Brevo API Email Sent] Delivered code directly to inbox of {to_email}")
-                    return
+                res_body = resp.read().decode("utf-8")
+                print(f"✅ [Brevo API Email Sent] Delivered 6-digit code directly to inbox of {to_email} (Resp: {res_body})")
+                return
+        except urllib.error.HTTPError as he:
+            err_body = he.read().decode("utf-8")
+            print(f"⚠️ [Brevo API HTTP Error {he.code}] {err_body}")
         except Exception as e:
             print(f"⚠️ [Brevo API Dispatch Error] {e}")
 
