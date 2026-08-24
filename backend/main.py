@@ -444,7 +444,7 @@ def calculate_tax(
             entity_type=query.entity_type.value,
             annual_income_or_turnover=query.annual_income_or_turnover,
             total_estimated_liability=result.total_estimated_liability,
-            calculation_notes=notes,
+            calculation_notes="\n".join(result.breakdown_notes) if hasattr(result, 'breakdown_notes') else "",
         ))
         db.commit()
 
@@ -1217,34 +1217,46 @@ def update_user_profile(
 # OTP Email Verification & Password Reset Endpoints
 # =====================================================
 
-def send_smtp_email(to_email: str, subject: str, body_text: str):
-    """Dispatches real email via SMTP if credentials exist in environment, or logs silently."""
+def send_smtp_email(to_email: str, subject: str, body_text: str, otp_code: str = ""):
+    """Dispatches real email via SMTP or macOS sendmail, and logs to terminal console."""
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
     smtp_pass = os.getenv("SMTP_PASSWORD")
 
+    print(f"\n==========================================================")
+    print(f"🔑 [EMAIL VERIFICATION OTP] Sent to: {to_email}")
+    print(f"👉 6-DIGIT CODE: {otp_code}")
+    print(f"==========================================================\n")
+
+    # 1. Try Authenticated SMTP if configured in backend/.env
     if smtp_user and smtp_pass:
         try:
             import smtplib
             from email.mime.text import MIMEText
-            from email.mime.multipart import MIMEMultipart
-
-            msg = MIMEMultipart()
+            msg = MIMEText(body_text, "plain", "utf-8")
             msg["From"] = f"TaxEaseBD Verification <{smtp_user}>"
             msg["To"] = to_email
             msg["Subject"] = subject
-            msg.attach(MIMEText(body_text, "plain", "utf-8"))
 
             with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
                 server.starttls()
                 server.login(smtp_user, smtp_pass)
                 server.sendmail(smtp_user, [to_email], msg.as_string())
-            print(f"✅ [SMTP Email Sent] Successfully sent 6-Digit Verification Code to {to_email}")
+            print(f"✅ [SMTP Email Sent] Dispatched email to inbox of {to_email}")
+            return
         except Exception as e:
-            print(f"⚠️ [SMTP Dispatch Warning] Could not connect to SMTP server: {e}")
-    else:
-        print(f"📧 [Email OTP Generated] 6-Digit Code for {to_email}: {body_text} (Configure SMTP_USER & SMTP_PASSWORD in .env for live inbox sending)")
+            print(f"⚠️ [SMTP Dispatch Warning] SMTP error: {e}")
+
+    # 2. Try macOS local sendmail binary fallback
+    import subprocess
+    try:
+        raw_msg = f"Subject: {subject}\nTo: {to_email}\nFrom: TaxEaseBD <noreply@taxeasebd.app>\nContent-Type: text/plain; charset=UTF-8\n\n{body_text}"
+        proc = subprocess.Popen(["/usr/sbin/sendmail", "-t", "-oi"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc.communicate(raw_msg.encode("utf-8"))
+        print(f"📧 [/usr/sbin/sendmail] Dispatched email to {to_email}")
+    except Exception as err:
+        print(f"ℹ️ [sendmail note] {err}")
 
 
 class SendOTPRequest(BaseModel):
@@ -1279,16 +1291,10 @@ def send_otp(req: SendOTPRequest, db: Session = Depends(database.get_db)):
     else:
         TEMP_OTP_STORE[email] = otp_code
 
-    # Dispatch real email via SMTP
-    subject = "TaxEaseBD - Your 6-Digit Email Verification Code"
-    body = (
-        f"Hello,\n\n"
-        f"Your TaxEaseBD 6-digit email verification code is: {otp_code}\n\n"
-        f"This code will expire in 10 minutes. Please enter this code in the app to verify your account.\n\n"
-        f"Regards,\n"
-        f"TaxEaseBD Compliance Team"
-    )
-    send_smtp_email(to_email=email, subject=subject, body_text=body)
+    # Dispatch simple plain-text email message
+    subject = f"TaxEaseBD Verification Code: {otp_code}"
+    body = f"Your TaxEaseBD 6-digit email verification code is: {otp_code}"
+    send_smtp_email(to_email=email, subject=subject, body_text=body, otp_code=otp_code)
 
     return {
         "success": True,
