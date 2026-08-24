@@ -1315,6 +1315,20 @@ def create_mushak_transaction(
     }
 
 
+@app.delete("/api/mushak/transactions")
+def clear_mushak_transactions(
+    user: Optional[models.User] = Depends(get_current_user_optional),
+    db: Session = Depends(database.get_db),
+):
+    """Clears all VAT transactions from the database for the current user."""
+    query = db.query(models.MushakTransaction)
+    if user:
+        query = query.filter(models.MushakTransaction.user_id == user.id)
+    deleted_count = query.delete(synchronize_session=False)
+    db.commit()
+    return {"message": "All transactions cleared", "count": deleted_count}
+
+
 @app.post("/api/mushak/upload-csv")
 async def upload_mushak_csv(
     file: UploadFile = File(...),
@@ -1322,16 +1336,17 @@ async def upload_mushak_csv(
     db: Session = Depends(database.get_db),
 ):
     """
-    Accepts a CSV spreadsheet containing VAT invoice transaction rows.
-    Parses date, invoice_no, customer_name, item_description, amount, vat_rate, input_credit.
+    Accepts any CSV spreadsheet containing VAT invoice transaction rows.
+    Fuzzy matches column headers (date, invoice, customer, item, amount, vat rate, input credit).
     Persists parsed transactions directly into the database.
     """
     import csv
     import io
     from datetime import datetime
 
-    if not file.filename.endswith(('.csv', '.txt', '.tsv')):
-        raise HTTPException(status_code=400, detail="Only CSV files are supported.")
+    filename_lower = (file.filename or "").lower()
+    if filename_lower and not filename_lower.endswith(('.csv', '.txt', '.tsv')):
+        raise HTTPException(status_code=400, detail="Only CSV spreadsheet files (.csv) are supported.")
 
     content = await file.read()
     text = content.decode('utf-8-sig', errors='ignore')
@@ -1339,25 +1354,35 @@ async def upload_mushak_csv(
 
     saved_count = 0
     for row in reader:
-        norm_row = {k.strip().lower(): v.strip() for k, v in row.items() if k}
+        norm_row = {str(k).strip().lower(): str(v).strip() for k, v in row.items() if k is not None}
 
-        date_val = norm_row.get('date') or norm_row.get('transaction_date') or datetime.now().strftime('%Y-%m-%d')
-        inv_val = norm_row.get('invoice #') or norm_row.get('invoice_no') or norm_row.get('invoice') or f"INV-{saved_count+1:03d}"
-        cust_val = norm_row.get('buyer name / bin') or norm_row.get('customer_name') or norm_row.get('customer') or 'General Customer'
-        item_val = norm_row.get('item description') or norm_row.get('item_description') or norm_row.get('item') or 'Taxable Goods/Services'
+        def find_val(keywords: list) -> str:
+            for kw in keywords:
+                for rk, rv in norm_row.items():
+                    if kw in rk:
+                        return rv
+            return ""
 
+        date_val = find_val(['date', 'day']) or datetime.now().strftime('%Y-%m-%d')
+        inv_val = find_val(['invoice', 'inv', 'num', '#']) or f"INV-{saved_count+1:03d}"
+        cust_val = find_val(['buyer', 'customer', 'bin', 'client', 'name']) or 'General Customer'
+        item_val = find_val(['item', 'desc', 'particular', 'service', 'goods']) or 'Taxable Goods/Services'
+
+        raw_amt = find_val(['sales', 'value', 'amount', 'price', 'total', 'bdt'])
         try:
-            amt_val = float(norm_row.get('sales value (bdt)') or norm_row.get('sales value') or norm_row.get('amount') or norm_row.get('sales_value') or 0)
+            amt_val = float(raw_amt.replace(',', '')) if raw_amt else 0.0
         except ValueError:
             amt_val = 0.0
 
+        raw_rate = find_val(['rate', 'vat', '%'])
         try:
-            rate_val = float(norm_row.get('vat rate') or norm_row.get('vat_rate') or 15.0)
+            rate_val = float(raw_rate.replace('%', '')) if raw_rate else 15.0
         except ValueError:
             rate_val = 15.0
 
+        raw_credit = find_val(['credit', 'rebate', 'input'])
         try:
-            credit_val = float(norm_row.get('input tax credit (bdt)') or norm_row.get('input_credit') or norm_row.get('input_tax_credit') or 0.0)
+            credit_val = float(raw_credit.replace(',', '')) if raw_credit else 0.0
         except ValueError:
             credit_val = 0.0
 
@@ -1376,6 +1401,9 @@ async def upload_mushak_csv(
             )
             db.add(db_tx)
             saved_count += 1
+
+    if saved_count == 0:
+        raise HTTPException(status_code=400, detail="No valid sales rows found in CSV. Ensure CSV contains column headers: Date, Invoice, Customer, Item, Amount, VAT Rate.")
 
     db.commit()
     return {"message": f"Successfully imported {saved_count} transactions", "count": saved_count}

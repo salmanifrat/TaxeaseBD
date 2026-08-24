@@ -129,6 +129,16 @@ export default function MushakView() {
   };
 
 
+  const handleClearAll = async () => {
+    if (!confirm(language === 'bn' ? 'আপনি কি নিশ্চিত যে সকল চালান মুছে ফেলতে চান?' : 'Are you sure you want to clear all recorded VAT invoices?')) return;
+    try {
+      const res = await apiFetch('/api/mushak/transactions', { method: 'DELETE' });
+      if (res.ok) {
+        setTransactions([]);
+      }
+    } catch {}
+  };
+
   // Real CSV upload: parses date,invoiceNo,customerName,item,amount,vatRate,inputCredit
   // rows and appends them, computing vatAmount = amount * vatRate / 100. This
   // used to not exist at all - "Upload CSVs" was described in the SRS but had
@@ -307,6 +317,14 @@ export default function MushakView() {
             <FileSpreadsheet className="w-4 h-4" />
             <span>{t.mushak.exportExcelBtn}</span>
           </button>
+          {transactions.length > 0 && (
+            <button
+              onClick={handleClearAll}
+              className="px-3 py-2.5 rounded-xl bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 font-semibold text-xs transition-all"
+            >
+              {language === 'bn' ? 'সব মুছে ফেলুন' : 'Clear All Invoices'}
+            </button>
+          )}
         </div>
       </div>
 
