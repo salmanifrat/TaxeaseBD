@@ -1236,8 +1236,9 @@ def send_smtp_email(to_email: str, subject: str, body_text: str, otp_code: str =
         try:
             import json
             import urllib.request
+            import urllib.error
             req_data = json.dumps({
-                "from": "TaxEaseBD Verification <onboarding@resend.dev>",
+                "from": "TaxEaseBD <onboarding@resend.dev>",
                 "to": [to_email],
                 "subject": subject,
                 "text": body_text,
@@ -1246,15 +1247,19 @@ def send_smtp_email(to_email: str, subject: str, body_text: str, otp_code: str =
                 "https://api.resend.com/emails",
                 data=req_data,
                 headers={
-                    "Authorization": f"Bearer {resend_key}",
+                    "Authorization": f"Bearer {resend_key.strip()}",
                     "Content-Type": "application/json",
+                    "User-Agent": "TaxEaseBD/1.0",
                 },
                 method="POST"
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
-                if resp.status in (200, 201):
-                    print(f"✅ [Resend API Email Sent] Delivered code directly to inbox of {to_email}")
-                    return
+                res_body = resp.read().decode("utf-8")
+                print(f"✅ [Resend API Email Sent] Delivered 6-digit code directly to inbox of {to_email} (Resp: {res_body})")
+                return
+        except urllib.error.HTTPError as he:
+            err_body = he.read().decode("utf-8")
+            print(f"⚠️ [Resend API HTTP Error {he.code}] {err_body}")
         except Exception as e:
             print(f"⚠️ [Resend API Dispatch Error] {e}")
 
