@@ -86,6 +86,11 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Vault State
+  const [uploadedVault, setUploadedVault] = useState<Record<string, UploadedDocState>>({});
+  const [targetDocForUpload, setTargetDocForUpload] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
   // Profile Form State
   const [formData, setFormData] = useState<Partial<UserProfile>>({
     name: user?.name || '',
@@ -99,10 +104,51 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
     tax_zone: user?.tax_zone || '',
   });
 
-  // Vault State
-  const [uploadedVault, setUploadedVault] = useState<Record<string, UploadedDocState>>({});
-  const [targetDocForUpload, setTargetDocForUpload] = useState<string | null>(null);
-  const [dragActive, setDragActive] = useState(false);
+  // Managed Companies State
+  const [managedCompanies, setManagedCompanies] = useState<Array<{ id: string; company_name: string; entity_type: string; tin?: string | null; bin?: string | null; trade_license?: string | null; business_address?: string | null }>>(
+    user?.managed_companies || []
+  );
+  const [showAddCompany, setShowAddCompany] = useState(false);
+  const [newCompany, setNewCompany] = useState({
+    company_name: '',
+    entity_type: 'private_limited_company',
+    tin: '',
+    bin: '',
+    trade_license: '',
+    business_address: '',
+  });
+
+  const handleAddCompany = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCompany.company_name.trim()) return;
+    const addedCompany = {
+      id: `comp_${Date.now()}`,
+      company_name: newCompany.company_name.trim(),
+      entity_type: newCompany.entity_type,
+      tin: newCompany.tin.trim() || null,
+      bin: newCompany.bin.trim() || null,
+      trade_license: newCompany.trade_license.trim() || null,
+      business_address: newCompany.business_address.trim() || null,
+    };
+    const updatedCompanies = [...managedCompanies, addedCompany];
+    setManagedCompanies(updatedCompanies);
+    setNewCompany({ company_name: '', entity_type: 'private_limited_company', tin: '', bin: '', trade_license: '', business_address: '' });
+    setShowAddCompany(false);
+
+    try {
+      const updated = await updateUserProfile({ managed_companies: updatedCompanies });
+      onUpdateUser(updated);
+    } catch {}
+  };
+
+  const handleRemoveCompany = async (compValId: string) => {
+    const updatedCompanies = managedCompanies.filter(c => c.id !== compValId);
+    setManagedCompanies(updatedCompanies);
+    try {
+      const updated = await updateUserProfile({ managed_companies: updatedCompanies });
+      onUpdateUser(updated);
+    } catch {}
+  };
 
   useEffect(() => {
     if (user) {
@@ -121,6 +167,21 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
   }, [user]);
 
   useEffect(() => {
+    if (user?.uploaded_documents && user.uploaded_documents.length > 0) {
+      const vaultMap: Record<string, UploadedDocState> = {};
+      user.uploaded_documents.forEach(doc => {
+        vaultMap[doc.docId] = {
+          docId: doc.docId,
+          filename: doc.filename,
+          uploadedAt: doc.uploadedAt,
+          size: doc.size,
+          status: doc.status as 'Verified' | 'Pending',
+        };
+      });
+      setUploadedVault(vaultMap);
+      return;
+    }
+
     if (typeof window === 'undefined') return;
     const raw = localStorage.getItem(STORAGE_VAULT_KEY);
     if (raw) {
@@ -129,14 +190,8 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
         return;
       } catch {}
     }
-    const defaultSeed: Record<string, UploadedDocState> = {
-      tin_cert: { docId: 'tin_cert', filename: 'etin_certificate_2026.pdf', uploadedAt: '2026-08-01', size: '1.2 MB', status: 'Verified' },
-      nid_passport: { docId: 'nid_passport', filename: 'nid_card_front_back.pdf', uploadedAt: '2026-08-02', size: '850 KB', status: 'Verified' },
-      bank_salary: { docId: 'bank_salary', filename: 'bank_statement_6months.pdf', uploadedAt: '2026-08-05', size: '2.4 MB', status: 'Verified' },
-    };
-    setUploadedVault(defaultSeed);
-    localStorage.setItem(STORAGE_VAULT_KEY, JSON.stringify(defaultSeed));
-  }, []);
+    setUploadedVault({});
+  }, [user]);
 
   const saveVaultState = (newVault: Record<string, UploadedDocState>) => {
     setUploadedVault(newVault);
@@ -375,16 +430,36 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
               />
             </div>
 
-            {/* 12-Digit e-TIN Number */}
+            {/* 12-Digit e-TIN Number (Optional) */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-[#2E5369]">12-Digit e-TIN Number</label>
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-[#2E5369]">12-Digit e-TIN Number</label>
+                <span className="text-[11px] font-bold text-[#1AABA8]">Optional</span>
+              </div>
               <input
                 type="text"
                 value={formData.tin || ''}
                 onChange={(e) => setFormData({ ...formData, tin: e.target.value })}
-                placeholder="8293-1029-4720"
+                placeholder="Not Provided (Optional e.g. 829310294720)"
+                maxLength={12}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-white text-[#0077B3] font-mono font-bold text-sm border border-[#A3D1E0] focus:outline-none focus:ring-2 focus:ring-[#0077B3]"
               />
+            </div>
+
+            {/* Quick Document Upload in Edit Profile Section */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex justify-between items-center">
+                <label className="text-xs font-bold text-[#2E5369]">Attach Document to Profile</label>
+                <span className="text-[11px] font-bold text-[#1AABA8]">Optional</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => triggerFileUpload()}
+                className="w-full py-2.5 px-3.5 rounded-xl bg-white border border-dashed border-[#0077B3] text-[#0077B3] font-bold text-xs hover:bg-[#F0F8FF] transition-all flex items-center justify-center space-x-2"
+              >
+                <UploadCloud className="w-4 h-4" />
+                <span>+ Upload NID / Trade License / e-TIN Certificate</span>
+              </button>
             </div>
 
             {/* Taxpayer Entity Type Dropdown */}
@@ -414,6 +489,119 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
               </button>
             </div>
           </form>
+
+          {/* MANAGED COMPANIES SECTION */}
+          <div className="pt-6 border-t border-[#A3D1E0]/50 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Building2 className="w-5 h-5 text-[#0077B3]" />
+                <h4 className="text-sm font-extrabold text-[#0077B3]">Companies Managed Under Your Profile</h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddCompany(!showAddCompany)}
+                className="px-3 py-1.5 rounded-lg bg-[#0077B3] text-white font-bold text-xs hover:bg-[#005f8e] transition-all shadow-sm"
+              >
+                {showAddCompany ? 'Cancel' : '+ Add Company'}
+              </button>
+            </div>
+
+            <p className="text-xs text-[#5B7D91]">
+              You can manage your own personal tax profile and link multiple companies or corporate accounts under this single profile.
+            </p>
+
+            {/* ADD COMPANY FORM */}
+            {showAddCompany && (
+              <form onSubmit={handleAddCompany} className="p-4 rounded-xl bg-[#F0F8FF] border border-[#A3D1E0] space-y-3">
+                <h5 className="text-xs font-bold text-[#0D2233]">Register New Company</h5>
+                <div>
+                  <label className="text-[11px] font-bold text-[#2E5369] block mb-1">Company / Business Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Dhaka Digital Solutions Ltd."
+                    value={newCompany.company_name}
+                    onChange={e => setNewCompany({ ...newCompany, company_name: e.target.value })}
+                    className="w-full px-3 py-1.5 rounded-lg bg-white text-[#0D2233] text-xs border border-[#A3D1E0]"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-[#2E5369] block mb-1">Entity Structure</label>
+                  <select
+                    value={newCompany.entity_type}
+                    onChange={e => setNewCompany({ ...newCompany, entity_type: e.target.value })}
+                    className="w-full px-3 py-1.5 rounded-lg bg-white text-[#0D2233] text-xs border border-[#A3D1E0]"
+                  >
+                    <option value="sole_proprietorship">Sole Proprietorship</option>
+                    <option value="partnership">Partnership Firm</option>
+                    <option value="private_limited_company">Private Limited Company (LLC)</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-[#2E5369] block mb-1">Company e-TIN (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="12-digit e-TIN"
+                      value={newCompany.tin}
+                      onChange={e => setNewCompany({ ...newCompany, tin: e.target.value })}
+                      className="w-full px-3 py-1.5 rounded-lg bg-white text-[#0D2233] text-xs border border-[#A3D1E0]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-[#2E5369] block mb-1">VAT BIN (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="9 or 13-digit BIN"
+                      value={newCompany.bin}
+                      onChange={e => setNewCompany({ ...newCompany, bin: e.target.value })}
+                      className="w-full px-3 py-1.5 rounded-lg bg-white text-[#0D2233] text-xs border border-[#A3D1E0]"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2 rounded-lg bg-[#1AABA8] hover:bg-[#0D8C89] text-white font-bold text-xs transition-all shadow-sm"
+                >
+                  Save &amp; Link Company
+                </button>
+              </form>
+            )}
+
+            {/* LIST OF MANAGED COMPANIES */}
+            {managedCompanies.length === 0 ? (
+              <div className="p-3 rounded-xl bg-white border border-[#A3D1E0] text-center text-xs text-[#5B7D91]">
+                No external companies linked yet. Click <strong>+ Add Company</strong> to manage a business under your account.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {managedCompanies.map(comp => (
+                  <div key={comp.id} className="p-3 rounded-xl bg-white border border-[#A3D1E0] flex items-center justify-between text-xs">
+                    <div>
+                      <div className="font-bold text-[#0D2233] flex items-center space-x-1.5">
+                        <Building2 className="w-3.5 h-3.5 text-[#0077B3]" />
+                        <span>{comp.company_name}</span>
+                      </div>
+                      <div className="text-[10px] text-[#5B7D91] mt-0.5">
+                        Type: {comp.entity_type.replace('_', ' ')} {comp.tin ? `• e-TIN: ${comp.tin}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveCompany(comp.id)}
+                      className="text-red-500 hover:text-red-700 p-1"
+                      title="Unlink company"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* RIGHT COLUMN: Document Vault & Verification Uploads */}

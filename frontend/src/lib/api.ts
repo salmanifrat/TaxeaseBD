@@ -11,6 +11,26 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000';
 
+export interface ManagedCompany {
+  id: string;
+  company_name: string;
+  entity_type: string;
+  tin?: string | null;
+  bin?: string | null;
+  trade_license?: string | null;
+  business_address?: string | null;
+}
+
+export interface UploadedDocItem {
+  docId: string;
+  filename: string;
+  uploadedAt: string;
+  size: string;
+  category?: string;
+  status: 'Verified' | 'Pending';
+  dataUrl?: string;
+}
+
 export interface UserProfile {
   email: string;
   name: string;
@@ -21,6 +41,8 @@ export interface UserProfile {
   business_address?: string | null;
   nid?: string | null;
   tax_zone?: string | null;
+  managed_companies?: ManagedCompany[] | null;
+  uploaded_documents?: UploadedDocItem[] | null;
   created_at?: string | null;
 }
 

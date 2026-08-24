@@ -14,6 +14,10 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [accountType, setAccountType] = useState<'individual' | 'company'>('individual');
+  const [tin, setTin] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [uploadedDocs, setUploadedDocs] = useState<Array<{ docId: string; filename: string; uploadedAt: string; size: string; status: 'Verified' | 'Pending' }>>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
@@ -23,7 +27,22 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
     if (!email.trim() || !email.includes('@')) return 'Please enter a valid email address.';
     if (password.length < 6) return 'Password must be at least 6 characters.';
     if (password !== confirm) return 'Passwords do not match.';
+    if (accountType === 'company' && !companyName.trim()) return 'Please enter your company name.';
     return '';
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    const newDoc = {
+      docId: `doc_${Date.now()}`,
+      filename: file.name,
+      uploadedAt: new Date().toISOString().split('T')[0],
+      size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+      status: 'Pending' as const,
+    };
+    setUploadedDocs(prev => [...prev, newDoc]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,7 +54,15 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
     try {
       const res = await apiFetch('/api/auth/signup', {
         method: 'POST',
-        body: JSON.stringify({ email: email.trim(), password, name: name.trim() }),
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          name: name.trim(),
+          tin: tin.trim() || null,
+          entity_type: accountType === 'company' ? 'private_limited_company' : 'individual',
+          company_name: accountType === 'company' ? companyName.trim() : null,
+          uploaded_documents: uploadedDocs,
+        }),
       });
       if (!res.ok) {
         setError(await apiErrorMessage(res, 'Could not create your account.'));
@@ -208,6 +235,126 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
               />
               {confirm && confirm !== password && (
                 <span style={{ fontSize: 11, color: '#E05C2E', fontWeight: 600, display: 'block', marginTop: 4 }}>Passwords don&apos;t match</span>
+              )}
+            </div>
+
+            {/* Account Category Selector */}
+            <div>
+              <label style={labelStyle}>Account Type</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => setAccountType('individual')}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: accountType === 'individual' ? '2px solid #1AABA8' : '1px solid #D1E8E2',
+                    background: accountType === 'individual' ? 'rgba(26,171,168,0.08)' : '#fff',
+                    color: accountType === 'individual' ? '#0D8C89' : '#5B7D91',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                  }}
+                >
+                  👤 Personal Account
+                  <span style={{ display: 'block', fontSize: 10, fontWeight: 400, opacity: 0.8, marginTop: 2 }}>
+                    (Manage self & linked companies)
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAccountType('company')}
+                  style={{
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: accountType === 'company' ? '2px solid #1AABA8' : '1px solid #D1E8E2',
+                    background: accountType === 'company' ? 'rgba(26,171,168,0.08)' : '#fff',
+                    color: accountType === 'company' ? '#0D8C89' : '#5B7D91',
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                  }}
+                >
+                  🏢 Dedicated Company
+                  <span style={{ display: 'block', fontSize: 10, fontWeight: 400, opacity: 0.8, marginTop: 2 }}>
+                    (Corporate/Business TIN & Tax)
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Company Name (if Dedicated Company) */}
+            {accountType === 'company' && (
+              <div>
+                <label style={labelStyle}>Company / Business Name *</label>
+                <input
+                  id="signup-company-name"
+                  type="text"
+                  placeholder="e.g. Apex Technologies Ltd."
+                  value={companyName}
+                  onChange={e => setCompanyName(e.target.value)}
+                  className="glass-input"
+                  style={{ marginTop: 6 }}
+                />
+              </div>
+            )}
+
+            {/* Optional e-TIN */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={labelStyle}>e-TIN Number</label>
+                <span style={{ fontSize: 11, color: '#1AABA8', fontWeight: 600 }}>Optional</span>
+              </div>
+              <input
+                id="signup-tin"
+                type="text"
+                placeholder="Optional 12-digit e-TIN..."
+                value={tin}
+                onChange={e => setTin(e.target.value)}
+                className="glass-input"
+                style={{ marginTop: 6 }}
+                maxLength={12}
+              />
+            </div>
+
+            {/* Optional Initial Document Upload */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                <label style={labelStyle}>Upload Initial Documents</label>
+                <span style={{ fontSize: 11, color: '#1AABA8', fontWeight: 600 }}>Optional</span>
+              </div>
+              <div style={{
+                border: '1.5px dashed #1AABA8',
+                borderRadius: 10,
+                padding: '12px 14px',
+                background: '#fff',
+                textAlign: 'center',
+                cursor: 'pointer',
+                position: 'relative'
+              }}>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.png,.jpeg"
+                  onChange={handleFileUpload}
+                  style={{
+                    position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%', height: '100%'
+                  }}
+                />
+                <span style={{ fontSize: 13, color: '#0D8C89', fontWeight: 600 }}>
+                  📄 Choose NID, e-TIN, or Trade License PDF/Image
+                </span>
+              </div>
+              {uploadedDocs.length > 0 && (
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {uploadedDocs.map((doc, idx) => (
+                    <div key={idx} style={{ fontSize: 11, background: '#E6F4F1', color: '#0D8C89', padding: '4px 8px', borderRadius: 6, display: 'flex', justifyContent: 'space-between' }}>
+                      <span>📎 {doc.filename}</span>
+                      <span>{doc.size}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 

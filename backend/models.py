@@ -16,6 +16,8 @@ class User(Base):
     business_address = Column(String, nullable=True)
     nid = Column(String, nullable=True)
     tax_zone = Column(String, nullable=True)
+    managed_companies = Column(JSON, nullable=True)
+    uploaded_documents = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

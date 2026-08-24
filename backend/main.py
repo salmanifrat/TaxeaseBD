@@ -375,6 +375,8 @@ class AuthRequest(BaseModel):
     name: Optional[str] = None
     tin: Optional[str] = None
     entity_type: Optional[str] = "individual"
+    managed_companies: Optional[List[dict]] = None
+    uploaded_documents: Optional[List[dict]] = None
 
 
 class AuthResponse(BaseModel):
@@ -876,6 +878,8 @@ class UpdateProfileRequest(BaseModel):
     business_address: Optional[str] = None
     nid: Optional[str] = None
     tax_zone: Optional[str] = None
+    managed_companies: Optional[List[dict]] = None
+    uploaded_documents: Optional[List[dict]] = None
 
 
 def _user_public_dict(user: models.User) -> dict:
@@ -889,6 +893,8 @@ def _user_public_dict(user: models.User) -> dict:
         "business_address": getattr(user, "business_address", None),
         "nid": getattr(user, "nid", None),
         "tax_zone": getattr(user, "tax_zone", None),
+        "managed_companies": getattr(user, "managed_companies", None) or [],
+        "uploaded_documents": getattr(user, "uploaded_documents", None) or [],
         "created_at": str(user.created_at) if hasattr(user, "created_at") and user.created_at else None,
     }
 
@@ -915,6 +921,10 @@ def update_user_profile(
         user.nid = profile.nid
     if profile.tax_zone is not None:
         user.tax_zone = profile.tax_zone
+    if profile.managed_companies is not None:
+        user.managed_companies = profile.managed_companies
+    if profile.uploaded_documents is not None:
+        user.uploaded_documents = profile.uploaded_documents
 
     db.commit()
     db.refresh(user)
@@ -943,8 +953,10 @@ def signup_user(auth: AuthRequest, db: Session = Depends(database.get_db)):
         email=email,
         name=auth.name or username,
         password_hash=hash_password(auth.password),
-        tin=auth.tin,
+        tin=auth.tin if auth.tin and auth.tin.strip() else None,
         entity_type=auth.entity_type or "individual",
+        managed_companies=auth.managed_companies or [],
+        uploaded_documents=auth.uploaded_documents or [],
     )
     db.add(new_user)
     db.commit()
