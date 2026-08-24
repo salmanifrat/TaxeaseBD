@@ -150,14 +150,6 @@ export default function AssistantView() {
     setInputText('');
     setLoading(true);
 
-    // Check for numerical tax calculation request
-    const computedLocalMsg = computeClientTaxResponse(query);
-    if (computedLocalMsg) {
-      setMessages((prev) => [...prev, computedLocalMsg]);
-      setLoading(false);
-      return;
-    }
-
     try {
       const res = await apiFetch('/api/chat', {
         method: 'POST',

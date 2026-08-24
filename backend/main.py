@@ -698,6 +698,102 @@ def compute_tax_breakdown_response(
         return f"{greeting}\n\n{context_header}\n\n{calculation_box}\n\n{summary_box}\n\n{advice_box}\n\n{footer}"
 
 
+def call_live_llm_api(
+    user: Optional[models.User],
+    user_name: Optional[str],
+    entity_title_en: str,
+    entity_title_bn: str,
+    company_name: Optional[str],
+    user_text: str,
+    top_law: models.IncomeTaxLaw,
+    is_bengali: bool,
+    top_source_url: str,
+) -> Optional[str]:
+    """
+    Attempts to call Gemini API, OpenAI API, or Groq API if keys exist in environment.
+    Constructs a rich prompt containing the user's full profile and NBR statutory law reference.
+    """
+    import json
+    import urllib.request
+
+    gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+
+    if not (gemini_key or openai_key or groq_key):
+        return None
+
+    tin_info = user.tin if (user and user.tin) else "Not Provided (Optional)"
+    tax_zone_info = user.tax_zone if (user and user.tax_zone) else "Unspecified"
+    docs_info = ", ".join([d.get("filename", "") for d in (user.uploaded_documents or [])]) if (user and user.uploaded_documents) else "None uploaded"
+
+    system_prompt = (
+        f"You are TaxEaseBD's warm, expert, highly empathetic AI tax advisor for Bangladesh (like ChatGPT or Claude).\n"
+        f"USER PROFILE:\n"
+        f"- Taxpayer Name: '{user.name if (user and user.name) else (user_name or 'Taxpayer')}'\n"
+        f"- Email: '{user.email if (user and user.email) else 'N/A'}'\n"
+        f"- Entity Type: '{entity_title_en}' ({entity_title_bn})\n"
+        f"- Business / Company Name: '{company_name or 'Individual'}'\n"
+        f"- 12-Digit e-TIN: '{tin_info}'\n"
+        f"- Tax Zone / Circle: '{tax_zone_info}'\n"
+        f"- Uploaded Profile Documents: [{docs_info}]\n\n"
+        f"GROUNDED STATUTORY REFERENCE:\n"
+        f"- Law Section: [{top_law.act_title} - {top_law.section_no} ({top_law.chapter_topic})]\n"
+        f"- Statutory Content: {top_law.content_bn if is_bengali else top_law.content_en}\n\n"
+        f"INSTRUCTIONS:\n"
+        f"- Respond in {'Bengali (বাংলা)' if is_bengali else 'English'}.\n"
+        f"- Speak naturally, conversationally, and empathetically like ChatGPT/Claude.\n"
+        f"- Address the user by name '{user_name or 'Taxpayer'}' and tailor guidance specifically to their entity type ({entity_title_en}).\n"
+        f"- Provide 2-3 clear, actionable steps for their compliance.\n"
+        f"- End with source reference: 📖 Source Authority: {top_law.act_title} ({top_law.section_no}) | 🔗 [NBR Gazette PDF]({top_source_url})"
+    )
+
+    # 1. Try Gemini REST API (gemini-1.5-flash, gemini-2.0-flash)
+    if gemini_key:
+        for model in ["gemini-1.5-flash", "gemini-2.0-flash"]:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
+                payload = {
+                    "contents": [{"parts": [{"text": f"{system_prompt}\n\nUser Question: {user_text}"}]}],
+                    "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1024}
+                }
+                req_data = json.dumps(payload).encode("utf-8")
+                req = urllib.request.Request(url, data=req_data, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=6) as response:
+                    res_json = json.loads(response.read().decode("utf-8"))
+                    text = res_json["candidates"][0]["content"]["parts"][0]["text"]
+                    if text and len(text.strip()) > 30:
+                        return text.strip()
+            except Exception as e:
+                print(f"Gemini API model {model} note: {e}")
+
+    # 2. Try OpenAI / Groq / OpenRouter API
+    if openai_key or groq_key:
+        api_url = "https://api.openai.com/v1/chat/completions" if openai_key else "https://api.groq.com/openai/v1/chat/completions"
+        api_key = openai_key or groq_key
+        model_name = "gpt-4o-mini" if openai_key else "llama-3.3-70b-versatile"
+        try:
+            payload = {
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_text}
+                ],
+                "temperature": 0.3
+            }
+            req_data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request(api_url, data=req_data, headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"})
+            with urllib.request.urlopen(req, timeout=6) as response:
+                res_json = json.loads(response.read().decode("utf-8"))
+                text = res_json["choices"][0]["message"]["content"]
+                if text and len(text.strip()) > 30:
+                    return text.strip()
+        except Exception as e:
+            print(f"OpenAI/Groq API note: {e}")
+
+    return None
+
+
 def synthesize_personalized_response(
     user: Optional[models.User],
     user_text: str,
@@ -730,95 +826,80 @@ def synthesize_personalized_response(
             top_source_url=top_source_url,
         )
 
-    # Check for Gemini / OpenAI / Anthropic API Key in environment
-    gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if gemini_key:
-        try:
-            import json
-            import urllib.request
+    # Check for live LLM API keys (Gemini, OpenAI, Groq, OpenRouter)
+    api_response = call_live_llm_api(
+        user=user,
+        user_name=user_name,
+        entity_title_en=entity_title_en,
+        entity_title_bn=entity_title_bn,
+        company_name=company_name,
+        user_text=user_text,
+        top_law=top_law,
+        is_bengali=is_bengali,
+        top_source_url=top_source_url
+    )
+    if api_response:
+        return api_response
 
-            prompt = (
-                f"You are TaxEaseBD's warm, intelligent, highly empathetic AI tax advisor for Bangladesh (like Claude or ChatGPT).\n"
-                f"User Profile: Name='{user_name or 'Taxpayer'}', Entity='{entity_title_en}', Business Name='{company_name or 'N/A'}'.\n"
-                f"User Question: '{user_text}'\n"
-                f"Grounded NBR Law Provision: [{top_law.act_title} - {top_law.section_no} ({top_law.chapter_topic})]\n"
-                f"Statutory Text: {top_law.content_bn if is_bengali else top_law.content_en}\n"
-                f"Language: {'Bengali' if is_bengali else 'English'}.\n\n"
-                f"Tone & Style Guidelines:\n"
-                f"- Speak in a natural, conversational, expert, and encouraging tone (like Claude/ChatGPT).\n"
-                f"- Greet the user by name if available, acknowledging their specific business entity type.\n"
-                f"- Answer their prompt directly in plain, clear language. DO NOT just quote dry legal text.\n"
-                f"- Provide 3 practical, actionable steps or tips tailored for Bangladesh tax compliance.\n"
-                f"- At the end, state the official section [{top_law.section_no}] and NBR source link in exact format: 🔗 Official NBR Gazette Source PDF: [Official NBR Gazette Source PDF]({top_source_url})."
-            )
-
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
-            req_data = json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8")
-            req = urllib.request.Request(url, data=req_data, headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=6) as response:
-                res_json = json.loads(response.read().decode("utf-8"))
-                llm_text = res_json["candidates"][0]["content"]["parts"][0]["text"]
-                if llm_text and len(llm_text.strip()) > 30:
-                    return llm_text.strip()
-        except Exception as e:
-            print(f"LLM API call note: {e}")
-
-    # Fluent, Claude-style Smart Advisory Synthesizer (Default Engine)
+    # Smart Conversational AI Synthesizer (ChatGPT / Claude Quality Engine)
     section_no = top_law.section_no
     topic = top_law.chapter_topic
     content = top_law.content_bn if is_bengali else top_law.content_en
+    clean_prompt = user_text.lower().strip()
 
+    # Intent 1: Greetings & Chit-chat
+    greetings = ['hi', 'hello', 'hey', 'assalamu alaikum', 'নমস্কার', 'কেমন আছেন', 'help', 'who are you']
+    if any(clean_prompt == g or clean_prompt.startswith(g + ' ') for g in greetings):
+        if is_bengali:
+            return (
+                f"👋 **হ্যালো {user_name or 'করদাতা'}!** আমি TaxEaseBD-এর এআই ট্যাক্স অ্যাডভাইজর।\n\n"
+                f"আপনার নিবন্ধিত **{entity_title_bn}** {'(' + company_name + ')' if company_name else ''} সংক্রান্ত যেকোনো আয়কর হিসাব, "
+                f"ভ্যাট চালান (মুসক ৬.৩), এনবিআর আইন ২০২৩ বা ট্রেড লাইসেন্স সংক্রান্ত প্রশ্ন আমাকে করুন।\n\n"
+                f"💡 **আপনি কী জানতে চান?**\n"
+                f"- \"আমার ২০ লাখ টাকা বার্ষিক আয়ের কর হিসাব কত?\"\n"
+                f"- \"১৮৪ ধারা অনুযায়ী PSR জমা দেওয়া কি বাধ্যতামূলক?\"\n"
+                f"- \"ট্যাক্স রেবেট বা বিনিয়োগ ছাড়ের নিয়ম কী?\""
+            )
+        else:
+            return (
+                f"👋 **Hello {user_name or 'Taxpayer'}!** I am your personal TaxEaseBD AI Advisor.\n\n"
+                f"I am here to guide you with personalized tax calculations, NBR Finance Act 2024–2026 compliance, "
+                f"and business filing advice tailored specifically for your **{entity_title_en}** {'(' + company_name + ')' if company_name else ''}.\n\n"
+                f"💡 **How can I assist you today?**\n"
+                f"- *\"Calculate tax payable for 15 Lakh BDT annual income\"*\n"
+                f"- *\"What tax rebates apply under Section 78?\"*\n"
+                f"- *\"Do I need Proof of Submission of Return (PSR) under Section 184?\"*"
+            )
+
+    # Intent 2: Specific Law / Section Advice
     if is_bengali:
-        greeting = f"👋 **হ্যালো {user_name}!**" if user_name else "👋 **হ্যালো!**"
-        context_header = f"আপনার নিবন্ধিত **{entity_title_bn}** {'(' + company_name + ')' if company_name else ''} এর প্রেক্ষিতে আপনার প্রশ্নের সহজ এবং কার্যকরী উত্তর নিচে দেওয়া হলো:"
-
-        direct_explanation = (
-            f"### 💡 আপনার প্রশ্নের উত্তর ও সহজ ব্যাখ্যা\n"
-            f"**{topic}** সংক্রান্ত আইনের মূল বিষয় হলো:\n"
-            f"\"{content}\"\n\n"
-            f"এটি কেবল একটি আইনি নিয়ম নয়—আপনার করের দায় সঠিকভাবে নিরূপণ এবং অডিট ঝুঁকি এড়াতে এটি অত্যন্ত গুরুত্বপূর্ণ।"
-        )
-
-        actionable_steps = (
-            f"### 📌 আপনার করণীয় ও ব্যবহারিক পরামর্শ\n"
-            f"1. **নথি প্রস্তুত রাখুন:** **{section_no}** এর সুবিধা বা বাধ্যবাধকতা অনুযায়ী প্রয়োজনীয় সকল চালানপত্র, ব্যাংক বিবরণী ও সনদ সংগ্রহ করুন।\n"
-            f"2. **রিটার্নে সঠিকভাবে প্রদর্শন:** আপনার বার্ষিক রিটার্ন জমা দেওয়ার সময় এই আয়ের অংশ বা ছাড় সঠিকভাবে ফরম এনবিআর-এ উল্লেখ করুন।\n"
-            f"3. **সময়সীমা মেনে চলুন:** জাতীয় কর দিবস (৩০শে নভেম্বর) এর পূর্বে রিটার্ন দাখিল নিশ্চিত করুন।"
-        )
-
-        citation_footer = (
+        return (
+            f"👋 **হ্যালো {user_name or 'করদাতা'}!**\n\n"
+            f"আপনার **{entity_title_bn}** {'(' + company_name + ')' if company_name else ''} এর জন্য **{topic}** (ধারা {section_no}) সংক্রান্ত তথ্য নিচে বিশ্লেষণ করে দেওয়া হলো:\n\n"
+            f"📌 **মূল আইনি নিয়ম:**\n"
+            f"{content}\n\n"
+            f"💡 **আপনার জন্য পরামর্শ:**\n"
+            f"১. **নথি সংরক্ষণ:** {section_no} এর আওতায় কর সুবিধা গ্রহণ করতে প্রয়োজনীয় চালানপত্র ও ব্যাংক বিবরণী সংগ্রহে রাখুন।\n"
+            f"২. **রিটার্নে সঠিক প্রদর্শন:** জাতীয় রাজস্ব বোর্ডে রিটার্ন দাখিলের সময় উক্ত ধারা অনুযায়ী প্রযোজ্য আয় বা ছাড় উল্লেখ করুন।\n"
+            f"৩. **ট্যাক্স ডে এর সময়সীমা:** আগামী ৩০শে নভেম্বর (ট্যাক্স ডে) এর পূর্বে রিটার্ন দাখিল নিশ্চিত করুন।\n\n"
             f"---\n"
-            f"📖 *আইনি ভিত্তি: {top_law.act_title} ({section_no})*\n"
-            f"🔗 Official NBR Gazette Source PDF: [Official NBR Gazette Source PDF]({top_source_url})"
+            f"📖 *আইনি রেফারেন্স: {top_law.act_title} ({section_no})*\n"
+            f"🔗 [Official NBR Gazette Source PDF]({top_source_url})"
         )
-
-        return f"{greeting}\n\n{context_header}\n\n{direct_explanation}\n\n{actionable_steps}\n\n{citation_footer}"
-
     else:
-        greeting = f"👋 **Hello {user_name}!**" if user_name else "👋 **Hello!**"
-        context_header = f"As a registered **{entity_title_en}** {'(' + company_name + ')' if company_name else ''} in Bangladesh, here is an easy-to-understand breakdown tailored to your question:"
-
-        direct_explanation = (
-            f"### 💡 Practical Explanation for Your Query\n"
-            f"Under Bangladesh tax regulations regarding **{topic}**:\n"
-            f"\"{content}\"\n\n"
-            f"Rather than just a formal law, this provision directly affects your annual tax liability, deduction eligibility, and compliance standing with the National Board of Revenue (NBR)."
-        )
-
-        actionable_steps = (
-            f"### 📌 Recommended Action Steps for You\n"
-            f"1. **Keep Proper Documentation:** Maintain verified receipts, certificates, or statements relevant to **{section_no}**.\n"
-            f"2. **Accurate Filing:** Ensure this is accurately disclosed when pre-filling or filing your annual NBR income tax return.\n"
-            f"3. **Deadline Compliance:** File your return prior to National Tax Day (November 30) to remain fully compliant and avoid penalties."
-        )
-
-        citation_footer = (
+        return (
+            f"👋 **Hello {user_name or 'Taxpayer'}!**\n\n"
+            f"Here is a personalized compliance analysis regarding **{topic}** ({section_no}) tailored for your **{entity_title_en}** {'(' + company_name + ')' if company_name else ''}:\n\n"
+            f"📌 **Statutory Rule ({section_no}):**\n"
+            f"{content}\n\n"
+            f"💡 **Tailored Guidance for You:**\n"
+            f"1. **Documentation:** Maintain verified invoices, bank ledgers, and deduction certificates for **{section_no}**.\n"
+            f"2. **Return Prefilling:** Disclose relevant income or tax exemption claims during your annual NBR return filing.\n"
+            f"3. **Deadline:** File your return prior to National Tax Day (November 30) to remain 100% compliant.\n\n"
             f"---\n"
-            f"📖 *Source Authority: {top_law.act_title} ({section_no})*\n"
-            f"🔗 Official NBR Gazette Source PDF: [Official NBR Gazette Source PDF]({top_source_url})"
+            f"📖 *Authority Source: {top_law.act_title} ({section_no})*\n"
+            f"🔗 [Official NBR Gazette Source PDF]({top_source_url})"
         )
-
-        return f"{greeting}\n\n{context_header}\n\n{direct_explanation}\n\n{actionable_steps}\n\n{citation_footer}"
 
 
 @app.post("/api/chat", response_model=ChatResponse)
