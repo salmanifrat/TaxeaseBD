@@ -326,12 +326,6 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
               </p>
             </div>
 
-            {forgotNotice && (
-              <div style={{ padding: '10px 14px', borderRadius: 12, background: '#F0F8FF', border: '1px solid #0077B3', color: '#0077B3', fontSize: 12, fontWeight: 700, textAlign: 'center', marginBottom: 16 }}>
-                💡 Gmail Reset Code: <span style={{ fontSize: 16, fontFamily: 'monospace', letterSpacing: 2 }}>{forgotNotice}</span>
-              </div>
-            )}
-
             {otpStep === 1 ? (
               <form onSubmit={handleSendResetOtp} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>

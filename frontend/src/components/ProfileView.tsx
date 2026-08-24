@@ -76,7 +76,8 @@ interface UploadedDocState {
   status: 'Verified' | 'Pending';
 }
 
-const STORAGE_VAULT_KEY = 'taxeasebd_document_vault';
+const getVaultStorageKey = (email?: string) =>
+  `taxeasebd_vault_${email ? email.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'guest'}`;
 
 export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
   const { language } = useLanguage();
@@ -143,6 +144,11 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
   }, [user]);
 
   useEffect(() => {
+    // Purge legacy global un-scoped key to prevent cross-account document leakage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('taxeasebd_document_vault');
+    }
+
     if (user?.uploaded_documents && user.uploaded_documents.length > 0) {
       const vaultMap: Record<string, UploadedDocState> = {};
       user.uploaded_documents.forEach(doc => {
@@ -159,7 +165,8 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
     }
 
     if (typeof window === 'undefined') return;
-    const raw = localStorage.getItem(STORAGE_VAULT_KEY);
+    const vaultKey = getVaultStorageKey(user?.email);
+    const raw = localStorage.getItem(vaultKey);
     if (raw) {
       try {
         setUploadedVault(JSON.parse(raw));
@@ -172,7 +179,8 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
   const saveVaultState = (newVault: Record<string, UploadedDocState>) => {
     setUploadedVault(newVault);
     if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_VAULT_KEY, JSON.stringify(newVault));
+      const vaultKey = getVaultStorageKey(user?.email);
+      localStorage.setItem(vaultKey, JSON.stringify(newVault));
     }
   };
 

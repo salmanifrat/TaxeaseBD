@@ -1217,6 +1217,36 @@ def update_user_profile(
 # OTP Email Verification & Password Reset Endpoints
 # =====================================================
 
+def send_smtp_email(to_email: str, subject: str, body_text: str):
+    """Dispatches real email via SMTP if credentials exist in environment, or logs silently."""
+    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER")
+    smtp_pass = os.getenv("SMTP_PASSWORD")
+
+    if smtp_user and smtp_pass:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            msg = MIMEMultipart()
+            msg["From"] = f"TaxEaseBD Verification <{smtp_user}>"
+            msg["To"] = to_email
+            msg["Subject"] = subject
+            msg.attach(MIMEText(body_text, "plain", "utf-8"))
+
+            with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_pass)
+                server.sendmail(smtp_user, [to_email], msg.as_string())
+            print(f"✅ [SMTP Email Sent] Successfully sent 6-Digit Verification Code to {to_email}")
+        except Exception as e:
+            print(f"⚠️ [SMTP Dispatch Warning] Could not connect to SMTP server: {e}")
+    else:
+        print(f"📧 [Email OTP Generated] 6-Digit Code for {to_email}: {body_text} (Configure SMTP_USER & SMTP_PASSWORD in .env for live inbox sending)")
+
+
 class SendOTPRequest(BaseModel):
     email: str
     purpose: Optional[str] = "signup"
@@ -1249,11 +1279,20 @@ def send_otp(req: SendOTPRequest, db: Session = Depends(database.get_db)):
     else:
         TEMP_OTP_STORE[email] = otp_code
 
-    print(f"📧 [Gmail OTP Dispatcher] Sent 6-Digit Verification Code '{otp_code}' to {email}")
+    # Dispatch real email via SMTP
+    subject = "TaxEaseBD - Your 6-Digit Email Verification Code"
+    body = (
+        f"Hello,\n\n"
+        f"Your TaxEaseBD 6-digit email verification code is: {otp_code}\n\n"
+        f"This code will expire in 10 minutes. Please enter this code in the app to verify your account.\n\n"
+        f"Regards,\n"
+        f"TaxEaseBD Compliance Team"
+    )
+    send_smtp_email(to_email=email, subject=subject, body_text=body)
+
     return {
         "success": True,
         "message": f"6-Digit verification code dispatched to {email}",
-        "otp_demo": otp_code,
     }
 
 @app.post("/api/auth/verify-otp")

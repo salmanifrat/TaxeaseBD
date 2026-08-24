@@ -485,18 +485,12 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
                 📧
               </div>
               <h3 style={{ fontSize: 20, fontWeight: 900, color: '#0D2233', margin: '0 0 6px' }}>
-                Gmail Verification Required
+                Email Verification Required
               </h3>
               <p style={{ fontSize: 13, color: '#5B7D91', margin: 0 }}>
-                We sent a 6-digit verification code to <strong>{email}</strong>
+                We sent a 6-digit verification code to <strong>{email}</strong>. Please check your inbox.
               </p>
             </div>
-
-            {demoOtpNotice && (
-              <div style={{ padding: '10px 14px', borderRadius: 12, background: '#F0F8FF', border: '1px solid #0077B3', color: '#0077B3', fontSize: 12, fontWeight: 700, textAlign: 'center', marginBottom: 16 }}>
-                💡 Gmail Verification Code: <span style={{ fontSize: 16, fontFamily: 'monospace', letterSpacing: 2 }}>{demoOtpNotice}</span>
-              </div>
-            )}
 
             <form onSubmit={verifyAndCompleteSignup} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
