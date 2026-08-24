@@ -21,8 +21,9 @@ import os
 import re
 import shutil
 import time
+from abc import ABC, abstractmethod
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
@@ -287,28 +288,28 @@ def get_current_user_required(
 
 
 # =====================================================
-# Main calculator endpoint
+# Strategy Design Pattern: Tax Calculation Engine
 # =====================================================
 
-@app.post("/api/calculate-tax", response_model=TaxResult)
-def calculate_tax(
-    query: TaxQuery,
-    db: Session = Depends(database.get_db),
-    user: Optional[models.User] = Depends(get_current_user_optional),
-):
-    notes: List[str] = []
-    signboard_tax = calculate_signboard_tax(query.zone, query.signboard_size_sqft)
+class ITaxCalculationStrategy(ABC):
+    """Abstract Strategy interface for calculating tax liabilities."""
+    @abstractmethod
+    def calculate(self, query: TaxQuery) -> TaxResult:
+        pass
 
-    if query.entity_type == EntityType.individual:
+
+class IndividualTaxStrategy(ITaxCalculationStrategy):
+    """Concrete Strategy for Individual Taxpayers."""
+    def calculate(self, query: TaxQuery) -> TaxResult:
         threshold, tax, min_applied = calculate_individual_tax(
             query.annual_income_or_turnover, query.taxpayer_category
         )
-        notes.append("Individual income tax calculated using progressive slabs after tax-free threshold.")
-        if min_applied:
-            notes.append(f"Calculated tax was below minimum tax — flat BDT {MINIMUM_TAX} minimum tax applied.")
-        notes.append("This is an ESTIMATE only, not a filing-ready or legally binding figure. Verify against the current NBR circular before filing.")
-
-        result = TaxResult(
+        notes = [
+            "Individual income tax calculated using progressive slabs after tax-free threshold.",
+            f"Calculated tax was below minimum tax — flat BDT {MINIMUM_TAX} minimum tax applied." if min_applied else None,
+            "This is an ESTIMATE only, not a filing-ready or legally binding figure. Verify against the current NBR circular before filing."
+        ]
+        return TaxResult(
             entity_type=query.entity_type.value,
             tax_free_threshold=threshold,
             income_tax_or_corporate_tax=tax,
@@ -318,24 +319,28 @@ def calculate_tax(
             signboard_tax=0.0,
             minimum_tax_applied=min_applied,
             total_estimated_liability=round(tax, 2),
-            notes=notes,
+            notes=[n for n in notes if n],
         )
 
-    elif query.entity_type == EntityType.sole_proprietorship:
+
+class SoleProprietorshipTaxStrategy(ITaxCalculationStrategy):
+    """Concrete Strategy for Sole Proprietorship Businesses."""
+    def calculate(self, query: TaxQuery) -> TaxResult:
         threshold, income_tax, min_applied = calculate_individual_tax(
             query.annual_income_or_turnover, query.taxpayer_category
         )
         vat_amount, vat_required = calculate_vat_or_turnover(query.annual_income_or_turnover)
         trade_fee = TRADE_LICENSE_RATES[query.business_category][query.zone]
+        signboard_tax = calculate_signboard_tax(query.zone, query.signboard_size_sqft)
 
-        notes.append("Sole Proprietorship: owner taxed at individual rates; business also pays VAT/Turnover Tax + Trade License fee.")
-        if min_applied:
-            notes.append(f"Calculated income tax was below minimum — flat BDT {MINIMUM_TAX} minimum tax applied.")
-        notes.append("VAT required" if vat_required else "Below VAT threshold — Turnover Tax (3%) applies instead.")
-        notes.append("This is an ESTIMATE only, not a filing-ready or legally binding figure. Verify against the current NBR circular before filing.")
-
+        notes = [
+            "Sole Proprietorship: owner taxed at individual rates; business also pays VAT/Turnover Tax + Trade License fee.",
+            f"Calculated income tax was below minimum — flat BDT {MINIMUM_TAX} minimum tax applied." if min_applied else None,
+            "VAT required" if vat_required else "Below VAT threshold — Turnover Tax (3%) applies instead.",
+            "This is an ESTIMATE only, not a filing-ready or legally binding figure. Verify against the current NBR circular before filing."
+        ]
         total = income_tax + vat_amount + trade_fee + signboard_tax
-        result = TaxResult(
+        return TaxResult(
             entity_type=query.entity_type.value,
             tax_free_threshold=threshold,
             income_tax_or_corporate_tax=income_tax,
@@ -345,20 +350,25 @@ def calculate_tax(
             signboard_tax=signboard_tax,
             minimum_tax_applied=min_applied,
             total_estimated_liability=round(total, 2),
-            notes=notes,
+            notes=[n for n in notes if n],
         )
 
-    elif query.entity_type == EntityType.partnership:
+
+class PartnershipTaxStrategy(ITaxCalculationStrategy):
+    """Concrete Strategy for Partnership Firms."""
+    def calculate(self, query: TaxQuery) -> TaxResult:
         entity_tax = round(query.annual_income_or_turnover * PARTNERSHIP_TAX_RATE, 2)
         vat_amount, vat_required = calculate_vat_or_turnover(query.annual_income_or_turnover)
         trade_fee = TRADE_LICENSE_RATES[query.business_category][query.zone]
+        signboard_tax = calculate_signboard_tax(query.zone, query.signboard_size_sqft)
 
-        notes.append("Partnership tax rate is a PLACEHOLDER (25%) — verify against current NBR partnership tax schedule.")
-        notes.append("VAT required" if vat_required else "Below VAT threshold — Turnover Tax (3%) applies instead.")
-        notes.append("This is an ESTIMATE only, not a filing-ready or legally binding figure. Verify against the current NBR circular before filing.")
-
+        notes = [
+            "Partnership tax rate is a PLACEHOLDER (25%) — verify against current NBR partnership tax schedule.",
+            "VAT required" if vat_required else "Below VAT threshold — Turnover Tax (3%) applies instead.",
+            "This is an ESTIMATE only, not a filing-ready or legally binding figure. Verify against the current NBR circular before filing."
+        ]
         total = entity_tax + vat_amount + trade_fee + signboard_tax
-        result = TaxResult(
+        return TaxResult(
             entity_type=query.entity_type.value,
             income_tax_or_corporate_tax=entity_tax,
             vat_or_turnover_tax=vat_amount,
@@ -369,18 +379,23 @@ def calculate_tax(
             notes=notes,
         )
 
-    else:  # private_limited_company
+
+class PrivateLimitedCompanyTaxStrategy(ITaxCalculationStrategy):
+    """Concrete Strategy for Private Limited Companies."""
+    def calculate(self, query: TaxQuery) -> TaxResult:
         corp_tax = round(query.annual_income_or_turnover * CORPORATE_TAX_RATE, 2)
         vat_amount, vat_required = calculate_vat_or_turnover(query.annual_income_or_turnover)
         trade_fee = TRADE_LICENSE_RATES[query.business_category][query.zone]
+        signboard_tax = calculate_signboard_tax(query.zone, query.signboard_size_sqft)
 
-        notes.append("Corporate tax rate is APPROXIMATE (27.5% for non-listed companies) — verify against latest Finance Act, as sector-specific rates may apply.")
-        notes.append("VAT required" if vat_required else "Below VAT threshold — Turnover Tax (3%) applies instead.")
-        notes.append("Private Limited Companies must also register with RJSC and file annual returns.")
-        notes.append("This is an ESTIMATE only, not a filing-ready or legally binding figure. Verify against the current NBR circular before filing.")
-
+        notes = [
+            "Corporate tax rate is APPROXIMATE (27.5% for non-listed companies) — verify against latest Finance Act, as sector-specific rates may apply.",
+            "VAT required" if vat_required else "Below VAT threshold — Turnover Tax (3%) applies instead.",
+            "Private Limited Companies must also register with RJSC and file annual returns.",
+            "This is an ESTIMATE only, not a filing-ready or legally binding figure. Verify against the current NBR circular before filing."
+        ]
         total = corp_tax + vat_amount + trade_fee + signboard_tax
-        result = TaxResult(
+        return TaxResult(
             entity_type=query.entity_type.value,
             income_tax_or_corporate_tax=corp_tax,
             vat_or_turnover_tax=vat_amount,
@@ -390,6 +405,37 @@ def calculate_tax(
             total_estimated_liability=round(total, 2),
             notes=notes,
         )
+
+
+class TaxStrategyFactory:
+    """Factory / Context manager for retrieving the appropriate Tax Calculation Strategy."""
+    _strategies: Dict[EntityType, ITaxCalculationStrategy] = {
+        EntityType.individual: IndividualTaxStrategy(),
+        EntityType.sole_proprietorship: SoleProprietorshipTaxStrategy(),
+        EntityType.partnership: PartnershipTaxStrategy(),
+        EntityType.private_limited_company: PrivateLimitedCompanyTaxStrategy(),
+    }
+
+    @classmethod
+    def get_strategy(cls, entity_type: EntityType) -> ITaxCalculationStrategy:
+        strategy = cls._strategies.get(entity_type)
+        if not strategy:
+            raise HTTPException(status_code=400, detail=f"No calculation strategy configured for {entity_type}")
+        return strategy
+
+
+# =====================================================
+# Main calculator endpoint (Delegates to Strategy Pattern)
+# =====================================================
+
+@app.post("/api/calculate-tax", response_model=TaxResult)
+def calculate_tax(
+    query: TaxQuery,
+    db: Session = Depends(database.get_db),
+    user: Optional[models.User] = Depends(get_current_user_optional),
+):
+    strategy = TaxStrategyFactory.get_strategy(query.entity_type)
+    result = strategy.calculate(query)
 
     # REQ-4.5.2: persist to the logged-in user's tax profile/history, if any.
     if user:
@@ -701,60 +747,61 @@ def compute_tax_breakdown_response(
         return f"{greeting}\n\n{context_header}\n\n{calculation_box}\n\n{summary_box}\n\n{advice_box}\n\n{footer}"
 
 
-def call_live_llm_api(
-    user: Optional[models.User],
-    user_name: Optional[str],
-    entity_title_en: str,
-    entity_title_bn: str,
-    company_name: Optional[str],
-    user_text: str,
-    top_law: models.IncomeTaxLaw,
-    is_bengali: bool,
-    top_source_url: str,
-) -> Optional[str]:
-    """
-    Attempts to call Gemini API, OpenAI API, or Groq API if keys exist in environment.
-    Constructs a rich prompt containing the user's full profile and NBR statutory law reference.
-    """
-    import json
-    import urllib.request
+# =====================================================
+# Strategy Design Pattern: AI Advisory Provider Engine
+# =====================================================
 
-    gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    openai_key = os.getenv("OPENAI_API_KEY")
-    groq_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+class ILLMProviderStrategy(ABC):
+    """Abstract Strategy interface for AI advisory generation."""
+    @abstractmethod
+    def generate_advisory(self, **kwargs) -> Optional[str]:
+        pass
 
-    if not (gemini_key or openai_key or groq_key):
-        return None
 
-    tin_info = user.tin if (user and user.tin) else "Not Provided (Optional)"
-    tax_zone_info = user.tax_zone if (user and user.tax_zone) else "Unspecified"
-    docs_info = ", ".join([d.get("filename", "") for d in (user.uploaded_documents or [])]) if (user and user.uploaded_documents) else "None uploaded"
+class GeminiLLMStrategy(ILLMProviderStrategy):
+    """Concrete Strategy for Google Gemini API."""
+    def generate_advisory(self, **kwargs) -> Optional[str]:
+        gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not gemini_key:
+            return None
 
-    system_prompt = (
-        f"You are TaxEaseBD's warm, expert, highly empathetic AI tax advisor for Bangladesh (like ChatGPT or Claude).\n"
-        f"USER PROFILE:\n"
-        f"- Taxpayer Name: '{user.name if (user and user.name) else (user_name or 'Taxpayer')}'\n"
-        f"- Email: '{user.email if (user and user.email) else 'N/A'}'\n"
-        f"- Entity Type: '{entity_title_en}' ({entity_title_bn})\n"
-        f"- Business / Company Name: '{company_name or 'Individual'}'\n"
-        f"- 12-Digit e-TIN: '{tin_info}'\n"
-        f"- Tax Zone / Circle: '{tax_zone_info}'\n"
-        f"- Uploaded Profile Documents: [{docs_info}]\n\n"
-        f"GROUNDED STATUTORY REFERENCE:\n"
-        f"- Law Section: [{top_law.act_title} - {top_law.section_no} ({top_law.chapter_topic})]\n"
-        f"- Statutory Content: {top_law.content_bn if is_bengali else top_law.content_en}\n\n"
-        f"INSTRUCTIONS:\n"
-        f"- Respond in {'Bengali (বাংলা)' if is_bengali else 'English'}.\n"
-        f"- Speak naturally, conversationally, and empathetically like ChatGPT/Claude.\n"
-        f"- Address the user by name '{user_name or 'Taxpayer'}' and tailor guidance specifically to their entity type ({entity_title_en}).\n"
-        f"- Provide 2-3 clear, actionable steps for their compliance.\n"
-        f"- End with source reference: 📖 Source Authority: {top_law.act_title} ({top_law.section_no}) | 🔗 [NBR Gazette PDF]({top_source_url})"
-    )
+        user = kwargs.get("user")
+        user_name = kwargs.get("user_name")
+        entity_title_en = kwargs.get("entity_title_en", "Taxpayer")
+        entity_title_bn = kwargs.get("entity_title_bn", "করদাতা")
+        company_name = kwargs.get("company_name")
+        user_text = kwargs.get("user_text", "")
+        top_law = kwargs.get("top_law")
+        is_bengali = kwargs.get("is_bengali", False)
+        top_source_url = kwargs.get("top_source_url", "")
 
-    # 1. Try Gemini REST API (gemini-1.5-flash, gemini-2.0-flash)
-    if gemini_key:
+        tin_info = user.tin if (user and user.tin) else "Not Provided"
+        tax_zone_info = user.tax_zone if (user and user.tax_zone) else "Unspecified"
+        docs_info = ", ".join([d.get("filename", "") for d in (user.uploaded_documents or [])]) if (user and user.uploaded_documents) else "None uploaded"
+
+        system_prompt = (
+            f"You are TaxEaseBD's warm, expert, highly empathetic AI tax advisor for Bangladesh (like ChatGPT or Claude).\n"
+            f"USER PROFILE:\n"
+            f"- Taxpayer Name: '{user.name if (user and user.name) else (user_name or 'Taxpayer')}'\n"
+            f"- Entity Type: '{entity_title_en}' ({entity_title_bn})\n"
+            f"- Business / Company Name: '{company_name or 'Individual'}'\n"
+            f"- 12-Digit e-TIN: '{tin_info}'\n"
+            f"- Tax Zone: '{tax_zone_info}'\n"
+            f"- Uploaded Profile Documents: [{docs_info}]\n\n"
+            f"GROUNDED STATUTORY REFERENCE:\n"
+            f"- Law Section: [{top_law.act_title} - {top_law.section_no} ({top_law.chapter_topic})]\n"
+            f"- Statutory Content: {top_law.content_bn if is_bengali else top_law.content_en}\n\n"
+            f"INSTRUCTIONS:\n"
+            f"- Respond in {'Bengali (বাংলা)' if is_bengali else 'English'}.\n"
+            f"- Speak naturally, conversationally, and empathetically like ChatGPT/Claude.\n"
+            f"- Address the user by name '{user_name or 'Taxpayer'}' and tailor guidance specifically to their entity type ({entity_title_en}).\n"
+            f"- End with source reference: 📖 Source Authority: {top_law.act_title} ({top_law.section_no}) | 🔗 [NBR Gazette PDF]({top_source_url})"
+        )
+
         for model in ["gemini-1.5-flash", "gemini-2.0-flash"]:
             try:
+                import json
+                import urllib.request
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={gemini_key}"
                 payload = {
                     "contents": [{"parts": [{"text": f"{system_prompt}\n\nUser Question: {user_text}"}]}],
@@ -769,15 +816,27 @@ def call_live_llm_api(
                         return text.strip()
             except Exception as e:
                 print(f"Gemini API model {model} note: {e}")
+        return None
 
-    # 2. Try OpenAI / Groq / OpenRouter API
-    if openai_key or groq_key:
-        api_url = "https://api.openai.com/v1/chat/completions" if openai_key else "https://api.groq.com/openai/v1/chat/completions"
-        api_key = openai_key or groq_key
-        model_name = "gpt-4o-mini" if openai_key else "llama-3.3-70b-versatile"
+
+class OpenAILLMStrategy(ILLMProviderStrategy):
+    """Concrete Strategy for OpenAI API."""
+    def generate_advisory(self, **kwargs) -> Optional[str]:
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if not openai_key:
+            return None
+
+        user_name = kwargs.get("user_name")
+        entity_title_en = kwargs.get("entity_title_en", "Taxpayer")
+        user_text = kwargs.get("user_text", "")
+        top_law = kwargs.get("top_law")
+
+        system_prompt = f"TaxEaseBD Advisory for {user_name or 'Taxpayer'} ({entity_title_en}). Grounding: {top_law.section_no}"
         try:
+            import json
+            import urllib.request
             payload = {
-                "model": model_name,
+                "model": "gpt-4o-mini",
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_text}
@@ -785,16 +844,141 @@ def call_live_llm_api(
                 "temperature": 0.3
             }
             req_data = json.dumps(payload).encode("utf-8")
-            req = urllib.request.Request(api_url, data=req_data, headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"})
+            req = urllib.request.Request("https://api.openai.com/v1/chat/completions", data=req_data, headers={"Content-Type": "application/json", "Authorization": f"Bearer {openai_key}"})
             with urllib.request.urlopen(req, timeout=6) as response:
                 res_json = json.loads(response.read().decode("utf-8"))
                 text = res_json["choices"][0]["message"]["content"]
                 if text and len(text.strip()) > 30:
                     return text.strip()
         except Exception as e:
-            print(f"OpenAI/Groq API note: {e}")
+            print(f"OpenAI API note: {e}")
+        return None
 
-    return None
+
+class GroqLLMStrategy(ILLMProviderStrategy):
+    """Concrete Strategy for Groq / OpenRouter API."""
+    def generate_advisory(self, **kwargs) -> Optional[str]:
+        groq_key = os.getenv("GROQ_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+        if not groq_key:
+            return None
+
+        user_name = kwargs.get("user_name")
+        entity_title_en = kwargs.get("entity_title_en", "Taxpayer")
+        user_text = kwargs.get("user_text", "")
+        top_law = kwargs.get("top_law")
+
+        system_prompt = f"TaxEaseBD Advisory for {user_name or 'Taxpayer'} ({entity_title_en}). Grounding: {top_law.section_no}"
+        try:
+            import json
+            import urllib.request
+            payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_text}
+                ],
+                "temperature": 0.3
+            }
+            req_data = json.dumps(payload).encode("utf-8")
+            req = urllib.request.Request("https://api.groq.com/openai/v1/chat/completions", data=req_data, headers={"Content-Type": "application/json", "Authorization": f"Bearer {groq_key}"})
+            with urllib.request.urlopen(req, timeout=6) as response:
+                res_json = json.loads(response.read().decode("utf-8"))
+                text = res_json["choices"][0]["message"]["content"]
+                if text and len(text.strip()) > 30:
+                    return text.strip()
+        except Exception as e:
+            print(f"Groq API note: {e}")
+        return None
+
+
+class OfflineSmartFallbackStrategy(ILLMProviderStrategy):
+    """Concrete Strategy for Offline Smart Conversational Fallback."""
+    def generate_advisory(self, **kwargs) -> Optional[str]:
+        user_name = kwargs.get("user_name")
+        entity_title_en = kwargs.get("entity_title_en", "Taxpayer")
+        entity_title_bn = kwargs.get("entity_title_bn", "করদাতা")
+        company_name = kwargs.get("company_name")
+        user_text = kwargs.get("user_text", "")
+        top_law = kwargs.get("top_law")
+        is_bengali = kwargs.get("is_bengali", False)
+        top_source_url = kwargs.get("top_source_url", "")
+
+        section_no = top_law.section_no
+        topic = top_law.chapter_topic
+        content = top_law.content_bn if is_bengali else top_law.content_en
+        clean_prompt = user_text.lower().strip()
+
+        # Intent 1: Greetings & Chit-chat
+        greetings = ['hi', 'hello', 'hey', 'assalamu alaikum', 'নমস্কার', 'কেমন আছেন', 'help', 'who are you']
+        if any(clean_prompt == g or clean_prompt.startswith(g + ' ') for g in greetings):
+            if is_bengali:
+                return (
+                    f"👋 **হ্যালো {user_name or 'করদাতা'}!** আমি TaxEaseBD-এর এআই ট্যাক্স অ্যাডভাইজর।\n\n"
+                    f"আপনার নিবন্ধিত **{entity_title_bn}** {'(' + company_name + ')' if company_name else ''} সংক্রান্ত যেকোনো আয়কর হিসাব, "
+                    f"ভ্যাট চালান (মুসক ৬.৩), এনবিআর আইন ২০২৩ বা ট্রেড লাইসেন্স সংক্রান্ত প্রশ্ন আমাকে করুন।\n\n"
+                    f"💡 **আপনি কী জানতে চান?**\n"
+                    f"- \"আমার ২০ লাখ টাকা বার্ষিক আয়ের কর হিসাব কত?\"\n"
+                    f"- \"১৮৪ ধারা অনুযায়ী PSR জমা দেওয়া কি বাধ্যতামূলক?\"\n"
+                    f"- \"ট্যাক্স রেবেট বা বিনিয়োগ ছাড়ের নিয়ম কী?\""
+                )
+            else:
+                return (
+                    f"👋 **Hello {user_name or 'Taxpayer'}!** I am your personal TaxEaseBD AI Advisor.\n\n"
+                    f"I am here to guide you with personalized tax calculations, NBR Finance Act 2024–2026 compliance, "
+                    f"and business filing advice tailored specifically for your **{entity_title_en}** {'(' + company_name + ')' if company_name else ''}.\n\n"
+                    f"💡 **How can I assist you today?**\n"
+                    f"- *\"Calculate tax payable for 15 Lakh BDT annual income\"*\n"
+                    f"- *\"What tax rebates apply under Section 78?\"*\n"
+                    f"- *\"Do I need Proof of Submission of Return (PSR) under Section 184?\"*"
+                )
+
+        # Intent 2: Specific Law / Section Advice
+        if is_bengali:
+            return (
+                f"👋 **হ্যালো {user_name or 'করদাতা'}!**\n\n"
+                f"আপনার **{entity_title_bn}** {'(' + company_name + ')' if company_name else ''} এর জন্য **{topic}** (ধারা {section_no}) সংক্রান্ত তথ্য নিচে বিশ্লেষণ করে দেওয়া হলো:\n\n"
+                f"📌 **মূল আইনি নিয়ম:**\n"
+                f"{content}\n\n"
+                f"💡 **আপনার জন্য পরামর্শ:**\n"
+                f"১. **নথি সংরক্ষণ:** {section_no} এর আওতায় কর সুবিধা গ্রহণ করতে প্রয়োজনীয় চালানপত্র ও ব্যাংক বিবরণী সংগ্রহে রাখুন।\n"
+                f"২. **রিটার্নে সঠিক প্রদর্শন:** জাতীয় রাজস্ব বোর্ডে রিটার্ন দাখিলের সময় উক্ত ধারা অনুযায়ী প্রযোজ্য আয় বা ছাড় উল্লেখ করুন।\n"
+                f"৩. **ট্যাক্স ডে এর সময়সীমা:** আগামী ৩০শে নভেম্বর (ট্যাক্স ডে) এর পূর্বে রিটার্ন দাখিল নিশ্চিত করুন।\n\n"
+                f"---\n"
+                f"📖 *আইনি রেফারেন্স: {top_law.act_title} ({section_no})*\n"
+                f"🔗 [Official NBR Gazette Source PDF]({top_source_url})"
+            )
+        else:
+            return (
+                f"👋 **Hello {user_name or 'Taxpayer'}!**\n\n"
+                f"Here is a personalized compliance analysis regarding **{topic}** ({section_no}) tailored for your **{entity_title_en}** {'(' + company_name + ')' if company_name else ''}:\n\n"
+                f"📌 **Statutory Rule ({section_no}):**\n"
+                f"{content}\n\n"
+                f"💡 **Tailored Guidance for You:**\n"
+                f"1. **Documentation:** Maintain verified invoices, bank ledgers, and deduction certificates for **{section_no}**.\n"
+                f"2. **Return Prefilling:** Disclose relevant income or tax exemption claims during your annual NBR return filing.\n"
+                f"3. **Deadline:** File your return prior to National Tax Day (November 30) to remain 100% compliant.\n\n"
+                f"---\n"
+                f"📖 *Authority Source: {top_law.act_title} ({section_no})*\n"
+                f"🔗 [Official NBR Gazette Source PDF]({top_source_url})"
+            )
+
+
+class LLMStrategyContext:
+    """Strategy Context for executing AI Provider strategies in chain of priority."""
+    def __init__(self):
+        self.strategies: List[ILLMProviderStrategy] = [
+            GeminiLLMStrategy(),
+            OpenAILLMStrategy(),
+            GroqLLMStrategy(),
+            OfflineSmartFallbackStrategy(),
+        ]
+
+    def execute(self, **kwargs) -> str:
+        for strategy in self.strategies:
+            response = strategy.generate_advisory(**kwargs)
+            if response:
+                return response
+        return "Sorry, I could not generate an advisory response at this moment."
 
 
 def synthesize_personalized_response(
@@ -804,7 +988,6 @@ def synthesize_personalized_response(
     is_bengali: bool,
     top_source_url: str,
 ) -> str:
-    """Synthesizes a warm, intelligent, Claude/ChatGPT-style personalized AI tax advisor response grounded in NBR Income Tax Act 2023."""
     user_name = user.name.split()[0] if (user and user.name) else None
     entity_type_raw = user.entity_type if (user and user.entity_type) else "individual"
     entity_title_en = entity_type_raw.replace("_", " ").title()
@@ -829,8 +1012,9 @@ def synthesize_personalized_response(
             top_source_url=top_source_url,
         )
 
-    # Check for live LLM API keys (Gemini, OpenAI, Groq, OpenRouter)
-    api_response = call_live_llm_api(
+    # Delegate AI advisory generation to LLM Strategy Context
+    llm_context = LLMStrategyContext()
+    return llm_context.execute(
         user=user,
         user_name=user_name,
         entity_title_en=entity_title_en,
@@ -839,70 +1023,8 @@ def synthesize_personalized_response(
         user_text=user_text,
         top_law=top_law,
         is_bengali=is_bengali,
-        top_source_url=top_source_url
+        top_source_url=top_source_url,
     )
-    if api_response:
-        return api_response
-
-    # Smart Conversational AI Synthesizer (ChatGPT / Claude Quality Engine)
-    section_no = top_law.section_no
-    topic = top_law.chapter_topic
-    content = top_law.content_bn if is_bengali else top_law.content_en
-    clean_prompt = user_text.lower().strip()
-
-    # Intent 1: Greetings & Chit-chat
-    greetings = ['hi', 'hello', 'hey', 'assalamu alaikum', 'নমস্কার', 'কেমন আছেন', 'help', 'who are you']
-    if any(clean_prompt == g or clean_prompt.startswith(g + ' ') for g in greetings):
-        if is_bengali:
-            return (
-                f"👋 **হ্যালো {user_name or 'করদাতা'}!** আমি TaxEaseBD-এর এআই ট্যাক্স অ্যাডভাইজর।\n\n"
-                f"আপনার নিবন্ধিত **{entity_title_bn}** {'(' + company_name + ')' if company_name else ''} সংক্রান্ত যেকোনো আয়কর হিসাব, "
-                f"ভ্যাট চালান (মুসক ৬.৩), এনবিআর আইন ২০২৩ বা ট্রেড লাইসেন্স সংক্রান্ত প্রশ্ন আমাকে করুন।\n\n"
-                f"💡 **আপনি কী জানতে চান?**\n"
-                f"- \"আমার ২০ লাখ টাকা বার্ষিক আয়ের কর হিসাব কত?\"\n"
-                f"- \"১৮৪ ধারা অনুযায়ী PSR জমা দেওয়া কি বাধ্যতামূলক?\"\n"
-                f"- \"ট্যাক্স রেবেট বা বিনিয়োগ ছাড়ের নিয়ম কী?\""
-            )
-        else:
-            return (
-                f"👋 **Hello {user_name or 'Taxpayer'}!** I am your personal TaxEaseBD AI Advisor.\n\n"
-                f"I am here to guide you with personalized tax calculations, NBR Finance Act 2024–2026 compliance, "
-                f"and business filing advice tailored specifically for your **{entity_title_en}** {'(' + company_name + ')' if company_name else ''}.\n\n"
-                f"💡 **How can I assist you today?**\n"
-                f"- *\"Calculate tax payable for 15 Lakh BDT annual income\"*\n"
-                f"- *\"What tax rebates apply under Section 78?\"*\n"
-                f"- *\"Do I need Proof of Submission of Return (PSR) under Section 184?\"*"
-            )
-
-    # Intent 2: Specific Law / Section Advice
-    if is_bengali:
-        return (
-            f"👋 **হ্যালো {user_name or 'করদাতা'}!**\n\n"
-            f"আপনার **{entity_title_bn}** {'(' + company_name + ')' if company_name else ''} এর জন্য **{topic}** (ধারা {section_no}) সংক্রান্ত তথ্য নিচে বিশ্লেষণ করে দেওয়া হলো:\n\n"
-            f"📌 **মূল আইনি নিয়ম:**\n"
-            f"{content}\n\n"
-            f"💡 **আপনার জন্য পরামর্শ:**\n"
-            f"১. **নথি সংরক্ষণ:** {section_no} এর আওতায় কর সুবিধা গ্রহণ করতে প্রয়োজনীয় চালানপত্র ও ব্যাংক বিবরণী সংগ্রহে রাখুন।\n"
-            f"২. **রিটার্নে সঠিক প্রদর্শন:** জাতীয় রাজস্ব বোর্ডে রিটার্ন দাখিলের সময় উক্ত ধারা অনুযায়ী প্রযোজ্য আয় বা ছাড় উল্লেখ করুন।\n"
-            f"৩. **ট্যাক্স ডে এর সময়সীমা:** আগামী ৩০শে নভেম্বর (ট্যাক্স ডে) এর পূর্বে রিটার্ন দাখিল নিশ্চিত করুন।\n\n"
-            f"---\n"
-            f"📖 *আইনি রেফারেন্স: {top_law.act_title} ({section_no})*\n"
-            f"🔗 [Official NBR Gazette Source PDF]({top_source_url})"
-        )
-    else:
-        return (
-            f"👋 **Hello {user_name or 'Taxpayer'}!**\n\n"
-            f"Here is a personalized compliance analysis regarding **{topic}** ({section_no}) tailored for your **{entity_title_en}** {'(' + company_name + ')' if company_name else ''}:\n\n"
-            f"📌 **Statutory Rule ({section_no}):**\n"
-            f"{content}\n\n"
-            f"💡 **Tailored Guidance for You:**\n"
-            f"1. **Documentation:** Maintain verified invoices, bank ledgers, and deduction certificates for **{section_no}**.\n"
-            f"2. **Return Prefilling:** Disclose relevant income or tax exemption claims during your annual NBR return filing.\n"
-            f"3. **Deadline:** File your return prior to National Tax Day (November 30) to remain 100% compliant.\n\n"
-            f"---\n"
-            f"📖 *Authority Source: {top_law.act_title} ({section_no})*\n"
-            f"🔗 [Official NBR Gazette Source PDF]({top_source_url})"
-        )
 
 
 @app.post("/api/chat", response_model=ChatResponse)
