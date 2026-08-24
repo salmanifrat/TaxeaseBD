@@ -312,9 +312,12 @@ def calculate_tax(
             entity_type=query.entity_type.value,
             tax_free_threshold=threshold,
             income_tax_or_corporate_tax=tax,
-            signboard_tax=signboard_tax,
+            vat_or_turnover_tax=0.0,
+            vat_required=False,
+            trade_license_fee=0.0,
+            signboard_tax=0.0,
             minimum_tax_applied=min_applied,
-            total_estimated_liability=round(tax + signboard_tax, 2),
+            total_estimated_liability=round(tax, 2),
             notes=notes,
         )
 

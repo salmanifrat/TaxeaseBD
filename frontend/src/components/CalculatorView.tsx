@@ -106,16 +106,17 @@ export default function CalculatorView() {
       incomeOrCorporateTax = annualTurnover * 0.275;
     }
 
+    const isIndividual = entityType === 'individual';
     const tradeLicenseRates: Record<BusinessCatKey, Record<ZoneKey, number>> = {
       trading: { dscc: 8000, dncc: 7500, chittagong: 6500, otherZone: 4000 },
       manufacturing: { dscc: 15000, dncc: 14000, chittagong: 12000, otherZone: 8000 },
       service: { dscc: 6000, dncc: 5500, chittagong: 5000, otherZone: 3500 },
       fcommerce: { dscc: 3500, dncc: 3500, chittagong: 3000, otherZone: 2000 },
     };
-    const tradeLicenseFee = tradeLicenseRates[businessCat][zone];
-    const signboardTax = signboardSize * signboardRatePerSqFt;
-    const isVatRequired = annualTurnover > 8000000;
-    const vatOrTurnoverTax = isVatRequired ? annualTurnover * 0.15 : annualTurnover * 0.03;
+    const tradeLicenseFee = isIndividual ? 0 : tradeLicenseRates[businessCat][zone];
+    const signboardTax = isIndividual ? 0 : signboardSize * signboardRatePerSqFt;
+    const isVatRequired = isIndividual ? false : annualTurnover > 8000000;
+    const vatOrTurnoverTax = isIndividual ? 0 : (isVatRequired ? annualTurnover * 0.15 : annualTurnover * 0.03);
 
     return {
       income_tax_or_corporate_tax: incomeOrCorporateTax,
@@ -368,28 +369,28 @@ export default function CalculatorView() {
               <div className="flex justify-between items-center text-slate-600">
                 <span>{t.calculator.incomeTax}</span>
                 <span className="font-bold text-emerald-400 font-mono">
-                  ৳ {Math.round(incomeOrCorporateTax).toLocaleString('en-IN')}
+                  ৳ {Math.round(incomeOrCorporateTax || 0).toLocaleString('en-IN')}
                 </span>
               </div>
 
               <div className="flex justify-between items-center text-slate-600">
                 <span>{t.calculator.vatOrTurnoverTax}</span>
                 <span className="font-bold text-blue-400 font-mono">
-                  ৳ {Math.round(vatOrTurnoverTax).toLocaleString('en-IN')}
+                  ৳ {Math.round(vatOrTurnoverTax || 0).toLocaleString('en-IN')}
                 </span>
               </div>
 
               <div className="flex justify-between items-center text-slate-600">
                 <span>{t.calculator.tradeLicenseFee}</span>
                 <span className="font-bold text-amber-400 font-mono">
-                  ৳ {tradeLicenseFee.toLocaleString('en-IN')}
+                  ৳ {(tradeLicenseFee || 0).toLocaleString('en-IN')}
                 </span>
               </div>
 
               <div className="flex justify-between items-center text-slate-600">
                 <span>{t.calculator.signboardTax}</span>
                 <span className="font-bold text-purple-400 font-mono">
-                  ৳ {signboardTax.toLocaleString('en-IN')}
+                  ৳ {(signboardTax || 0).toLocaleString('en-IN')}
                 </span>
               </div>
 
@@ -403,7 +404,7 @@ export default function CalculatorView() {
               <div className="border-t border-slate-700 pt-3 mt-3 flex justify-between items-center">
                 <span className="font-extrabold text-slate-900">{t.calculator.totalLiability}</span>
                 <span className="text-xl font-extrabold text-emerald-400 font-mono">
-                  ৳ {Math.round(totalLiability).toLocaleString('en-IN')}
+                  ৳ {Math.round(totalLiability || 0).toLocaleString('en-IN')}
                 </span>
               </div>
             </div>
