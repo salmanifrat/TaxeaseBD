@@ -1265,42 +1265,6 @@ def get_mushak_transactions(
     if user:
         query = query.filter(models.MushakTransaction.user_id == user.id)
     txs = query.order_by(models.MushakTransaction.id.desc()).all()
-    if not txs:
-        return [
-            {
-                "id": 1,
-                "date": "2026-07-02",
-                "invoiceNo": "INV-2026-001",
-                "customerName": "Daraz Bangladesh BIN: 002910293",
-                "item": "IT Consultancy Services",
-                "amount": 250000.0,
-                "vatRate": 15.0,
-                "vatAmount": 37500.0,
-                "inputCredit": 12000.0,
-            },
-            {
-                "id": 2,
-                "date": "2026-07-10",
-                "invoiceNo": "INV-2026-002",
-                "customerName": "Apex Footwear Ltd BIN: 001920394",
-                "item": "Software License Supply",
-                "amount": 480000.0,
-                "vatRate": 15.0,
-                "vatAmount": 72000.0,
-                "inputCredit": 24000.0,
-            },
-            {
-                "id": 3,
-                "date": "2026-07-18",
-                "invoiceNo": "INV-2026-003",
-                "customerName": "Beximco Pharma BIN: 004928102",
-                "item": "Cloud Hosting Integration",
-                "amount": 150000.0,
-                "vatRate": 15.0,
-                "vatAmount": 22500.0,
-                "inputCredit": 7500.0,
-            },
-        ]
     return [
         {
             "id": t.id,
@@ -1349,6 +1313,72 @@ def create_mushak_transaction(
         "vatAmount": db_tx.vat_amount,
         "inputCredit": db_tx.input_credit,
     }
+
+
+@app.post("/api/mushak/upload-csv")
+async def upload_mushak_csv(
+    file: UploadFile = File(...),
+    user: Optional[models.User] = Depends(get_current_user_optional),
+    db: Session = Depends(database.get_db),
+):
+    """
+    Accepts a CSV spreadsheet containing VAT invoice transaction rows.
+    Parses date, invoice_no, customer_name, item_description, amount, vat_rate, input_credit.
+    Persists parsed transactions directly into the database.
+    """
+    import csv
+    import io
+    from datetime import datetime
+
+    if not file.filename.endswith(('.csv', '.txt', '.tsv')):
+        raise HTTPException(status_code=400, detail="Only CSV files are supported.")
+
+    content = await file.read()
+    text = content.decode('utf-8-sig', errors='ignore')
+    reader = csv.DictReader(io.StringIO(text))
+
+    saved_count = 0
+    for row in reader:
+        norm_row = {k.strip().lower(): v.strip() for k, v in row.items() if k}
+
+        date_val = norm_row.get('date') or norm_row.get('transaction_date') or datetime.now().strftime('%Y-%m-%d')
+        inv_val = norm_row.get('invoice #') or norm_row.get('invoice_no') or norm_row.get('invoice') or f"INV-{saved_count+1:03d}"
+        cust_val = norm_row.get('buyer name / bin') or norm_row.get('customer_name') or norm_row.get('customer') or 'General Customer'
+        item_val = norm_row.get('item description') or norm_row.get('item_description') or norm_row.get('item') or 'Taxable Goods/Services'
+
+        try:
+            amt_val = float(norm_row.get('sales value (bdt)') or norm_row.get('sales value') or norm_row.get('amount') or norm_row.get('sales_value') or 0)
+        except ValueError:
+            amt_val = 0.0
+
+        try:
+            rate_val = float(norm_row.get('vat rate') or norm_row.get('vat_rate') or 15.0)
+        except ValueError:
+            rate_val = 15.0
+
+        try:
+            credit_val = float(norm_row.get('input tax credit (bdt)') or norm_row.get('input_credit') or norm_row.get('input_tax_credit') or 0.0)
+        except ValueError:
+            credit_val = 0.0
+
+        if amt_val > 0:
+            vat_amt = round(amt_val * (rate_val / 100.0), 2)
+            db_tx = models.MushakTransaction(
+                user_id=user.id if user else None,
+                transaction_date=date_val,
+                invoice_no=inv_val,
+                customer_name=cust_val,
+                item_description=item_val,
+                amount=amt_val,
+                vat_rate=rate_val,
+                vat_amount=vat_amt,
+                input_credit=credit_val,
+            )
+            db.add(db_tx)
+            saved_count += 1
+
+    db.commit()
+    return {"message": f"Successfully imported {saved_count} transactions", "count": saved_count}
 
 
 @app.get("/api/calendar/deadlines")

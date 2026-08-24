@@ -140,47 +140,38 @@ export default function MushakView() {
     setUploadError('');
 
     try {
-      const text = await file.text();
-      const rows = text.split(/\r?\n/).map((r) => r.trim()).filter(Boolean);
-      if (rows.length < 2) throw new Error('empty');
+      const formData = new FormData();
+      formData.append('file', file);
 
-      const header = rows[0].split(',').map((h) => h.trim().toLowerCase());
-      const required = ['date', 'invoiceno', 'customername', 'item', 'amount', 'vatrate'];
-      const missing = required.filter((c) => !header.includes(c));
-      if (missing.length) {
-        setUploadError(
-          language === 'bn'
-            ? `CSV এ এই কলামগুলো নেই: ${missing.join(', ')}। প্রত্যাশিত: date,invoiceNo,customerName,item,amount,vatRate,inputCredit`
-            : `CSV is missing columns: ${missing.join(', ')}. Expected header: date,invoiceNo,customerName,item,amount,vatRate,inputCredit`
-        );
-        return;
-      }
-
-      const idx = (name: string) => header.indexOf(name);
-      const parsed: Transaction[] = rows.slice(1).map((row, i) => {
-        const cols = row.split(',').map((c) => c.trim());
-        const amount = parseFloat(cols[idx('amount')]) || 0;
-        const vatRate = parseFloat(cols[idx('vatrate')]) || 0;
-        const inputCreditIdx = idx('inputcredit');
-        return {
-          id: `csv-${Date.now()}-${i}`,
-          date: cols[idx('date')] || '',
-          invoiceNo: cols[idx('invoiceno')] || '',
-          customerName: cols[idx('customername')] || '',
-          item: cols[idx('item')] || '',
-          amount,
-          vatRate,
-          vatAmount: Math.round(amount * (vatRate / 100)),
-          inputCredit: inputCreditIdx >= 0 ? (parseFloat(cols[inputCreditIdx]) || 0) : 0,
-        };
+      const res = await apiFetch('/api/mushak/upload-csv', {
+        method: 'POST',
+        body: formData,
       });
 
-      setTransactions((prev) => [...prev, ...parsed]);
+      if (res.ok) {
+        const fetchRes = await apiFetch('/api/mushak/transactions');
+        if (fetchRes.ok) {
+          const data = await fetchRes.json();
+          setTransactions(data.map((tx: any) => ({
+            id: String(tx.id),
+            date: tx.date,
+            invoiceNo: tx.invoiceNo,
+            customerName: tx.customerName,
+            item: tx.item,
+            amount: tx.amount,
+            vatRate: tx.vatRate,
+            vatAmount: tx.vatAmount,
+            inputCredit: tx.inputCredit,
+          })));
+          return;
+        }
+      }
+      throw new Error('Upload failed');
     } catch {
       setUploadError(
         language === 'bn'
-          ? 'CSV পড়া যায়নি। ফাইলটি সঠিক ফরম্যাটে আছে কিনা যাচাই করুন।'
-          : "Couldn't read that CSV. Please check the file format."
+          ? 'CSV ফাইল আপলোড করা যায়নি। ফাইলের কলামগুলো পরীক্ষা করে পুনরায় চেষ্টা করুন।'
+          : "Could not upload CSV. Please ensure the CSV contains valid columns: Date, Invoice No, Customer Name, Item Description, Sales Value, VAT Rate, Input Credit."
       );
     }
   };
@@ -394,23 +385,33 @@ export default function MushakView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {transactions.map((tx) => (
-                <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="py-3 px-3 font-mono text-slate-500">{tx.date}</td>
-                  <td className="py-3 px-3 font-mono font-bold text-slate-900">{tx.invoiceNo}</td>
-                  <td className="py-3 px-3 font-semibold text-slate-800">{tx.customerName}</td>
-                  <td className="py-3 px-3 text-slate-500">{tx.item}</td>
-                  <td className="py-3 px-3 text-right font-mono font-semibold text-slate-900">
-                    ৳ {tx.amount.toLocaleString('en-IN')}
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono font-bold text-purple-600">
-                    ৳ {tx.vatAmount.toLocaleString('en-IN')}
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono font-bold text-blue-600">
-                    ৳ {tx.inputCredit.toLocaleString('en-IN')}
+              {transactions.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-10 text-center text-slate-500 text-xs font-medium">
+                    <Receipt className="w-8 h-8 text-purple-400 mx-auto mb-2 opacity-60" />
+                    <p className="font-bold text-slate-700 mb-1">No VAT Sales Transactions Recorded</p>
+                    <p>Click <span className="text-purple-600 font-bold">+ Add Manual Entry</span> or <span className="text-emerald-600 font-bold">Upload CSV</span> above to add real business invoices.</p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                transactions.map((tx) => (
+                  <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="py-3 px-3 font-mono text-slate-500">{tx.date}</td>
+                    <td className="py-3 px-3 font-mono font-bold text-slate-900">{tx.invoiceNo}</td>
+                    <td className="py-3 px-3 font-semibold text-slate-800">{tx.customerName}</td>
+                    <td className="py-3 px-3 text-slate-500">{tx.item}</td>
+                    <td className="py-3 px-3 text-right font-mono font-semibold text-slate-900">
+                      ৳ {tx.amount.toLocaleString('en-IN')}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-purple-600">
+                      ৳ {tx.vatAmount.toLocaleString('en-IN')}
+                    </td>
+                    <td className="py-3 px-3 text-right font-mono font-bold text-blue-600">
+                      ৳ {tx.inputCredit.toLocaleString('en-IN')}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
