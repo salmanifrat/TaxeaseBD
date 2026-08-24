@@ -95,9 +95,17 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
             <div className="bg-emerald-500 h-full rounded-full" style={{ width: '92%' }} />
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            {language === 'bn' 
-              ? 'ট্রেড লাইসেন্স ও ই-টিন আপডেট রয়েছে। আগামী ভ্যাট রিটার্ন ১৫ই আগস্ট।' 
-              : 'Trade License & E-TIN updated. Next VAT return due Aug 15.'}
+            {(() => {
+              const now = new Date();
+              let target = new Date(now.getFullYear(), now.getMonth(), 15);
+              if (now.getDate() > 15) {
+                target = new Date(now.getFullYear(), now.getMonth() + 1, 15);
+              }
+              const monthNameStr = target.toLocaleString(language === 'bn' ? 'bn-BD' : 'en-US', { month: 'short' });
+              return language === 'bn' 
+                ? `ট্রেড লাইসেন্স ও ই-টিন আপডেট রয়েছে। আগামী ভ্যাট রিটার্ন ১৫ই ${monthNameStr}।` 
+                : `Trade License & E-TIN updated. Next VAT return due ${monthNameStr} 15.`;
+            })()}
           </p>
         </div>
 

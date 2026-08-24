@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, loadSession } from '@/lib/api';
 import { 
   CalendarDays, 
   Send, 
@@ -30,6 +30,36 @@ export default function CalendarView() {
   const { t, language } = useLanguage();
   const [showModal, setShowModal] = useState(false);
   const [deadlines, setDeadlines] = useState<Deadline[]>([]);
+
+  const sessionUser = typeof window !== 'undefined' ? loadSession()?.user : null;
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const day = now.getDate();
+
+  // VAT 15th monthly due date
+  let vatTarget = new Date(year, month, 15);
+  if (day > 15) {
+    vatTarget = new Date(year, month + 1, 15);
+  }
+  const vatDiff = Math.max(0, Math.ceil((vatTarget.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+  const vatMonthName = vatTarget.toLocaleString(language === 'bn' ? 'bn-BD' : 'en-US', { month: 'long' });
+  const vatDateFormatted = `${vatMonthName} 15, ${vatTarget.getFullYear()}`;
+
+  // Income Tax Day (Nov 30)
+  let taxDayTarget = new Date(year, 10, 30);
+  if (month > 10 || (month === 10 && day > 30)) {
+    taxDayTarget = new Date(year + 1, 10, 30);
+  }
+  const taxDiff = Math.max(0, Math.ceil((taxDayTarget.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+
+  // Trade License
+  let tradeTargetYear = year;
+  if (month > 5 || (month === 5 && day > 30)) {
+    tradeTargetYear = year + 1;
+  }
+  const hasTradeDoc = sessionUser?.uploaded_documents?.some((d: any) => d.docId === 'license_cert' || d.filename?.toLowerCase().includes('license'));
 
   useEffect(() => {
     apiFetch('/api/calendar/deadlines')
@@ -111,8 +141,8 @@ END:VCALENDAR`;
           <p className="text-xs text-slate-700 mt-2 leading-relaxed">{t.calendar.vatDeadlineDesc}</p>
 
           <div className="mt-6 pt-4 border-t border-slate-300 flex items-center justify-between text-xs">
-            <span className="text-slate-600">Next Due: August 15, 2026</span>
-            <span className="font-bold text-amber-700">15 Days Left</span>
+            <span className="text-slate-600">Next Due: {vatDateFormatted}</span>
+            <span className="font-bold text-amber-700">{vatDiff === 0 ? 'Due Today!' : `${vatDiff} Days Left`}</span>
           </div>
         </div>
 
@@ -129,8 +159,8 @@ END:VCALENDAR`;
           <p className="text-xs text-slate-700 mt-2 leading-relaxed">{t.calendar.tradeDeadlineDesc}</p>
 
           <div className="mt-6 pt-4 border-t border-slate-300 flex items-center justify-between text-xs">
-            <span className="text-slate-600">Status: Valid</span>
-            <span className="font-bold text-emerald-700">June 30, 2027</span>
+            <span className="text-slate-600">Status: {hasTradeDoc ? 'Valid (Uploaded)' : 'June 30 Renewal'}</span>
+            <span className="font-bold text-emerald-700">June 30, {tradeTargetYear}</span>
           </div>
         </div>
 
@@ -148,7 +178,7 @@ END:VCALENDAR`;
 
           <div className="mt-6 pt-4 border-t border-slate-300 flex items-center justify-between text-xs">
             <span className="text-slate-600">Tax Day: Nov 30</span>
-            <span className="font-bold text-blue-700">122 Days Left</span>
+            <span className="font-bold text-blue-700">{taxDiff} Days Left</span>
           </div>
         </div>
       </div>
