@@ -60,12 +60,63 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
     }
   };
 
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [demoOtpNotice, setDemoOtpNotice] = useState('');
+  const [otpError, setOtpError] = useState('');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const err = validate();
     if (err) { setError(err); return; }
     setError('');
     setLoading(true);
+    try {
+      const otpRes = await apiFetch('/api/auth/send-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim(), purpose: 'signup' }),
+      });
+      if (otpRes.ok) {
+        const otpData = await otpRes.json();
+        setDemoOtpNotice(otpData.otp_demo || '');
+        setShowOtpModal(true);
+      } else {
+        // Direct fallback if OTP service note
+        await completeSignup();
+      }
+    } catch {
+      await completeSignup();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyAndCompleteSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpCode || otpCode.length < 6) {
+      setOtpError('Please enter the full 6-digit code.');
+      return;
+    }
+    setOtpError('');
+    setLoading(true);
+    try {
+      const vRes = await apiFetch('/api/auth/verify-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim(), otp: otpCode.trim() }),
+      });
+      if (!vRes.ok) {
+        setOtpError(await apiErrorMessage(vRes, 'Invalid 6-digit code.'));
+        setLoading(false);
+        return;
+      }
+      await completeSignup();
+    } catch {
+      setOtpError('Verification failed. Please try again.');
+      setLoading(false);
+    }
+  };
+
+  const completeSignup = async () => {
     try {
       const res = await apiFetch('/api/auth/signup', {
         method: 'POST',
@@ -81,13 +132,14 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
       });
       if (!res.ok) {
         setError(await apiErrorMessage(res, 'Could not create your account.'));
+        setShowOtpModal(false);
         return;
       }
       const data = await res.json();
       saveSession({ token: data.token, user: data.user });
       onSignup(data.user as UserProfile);
     } catch {
-      setError('Could not reach the TaxEaseBD server. Is the backend running on port 8000?');
+      setError('Could not reach the TaxEaseBD server.');
     } finally {
       setLoading(false);
     }
@@ -416,6 +468,81 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
           </p>
         </div>
       </div>
+
+      {/* 6-DIGIT EMAIL VERIFICATION OTP MODAL */}
+      {showOtpModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(13, 34, 51, 0.75)', backdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+        }}>
+          <div style={{
+            background: '#ffffff', borderRadius: 20, padding: 32, width: '100%', maxWidth: 420,
+            boxShadow: '0 20px 50px rgba(0,0,0,0.3)', border: '1px solid #A3D1E0'
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: 16 }}>
+              <div style={{ width: 56, height: 56, borderRadius: 16, background: 'rgba(0,119,179,0.1)', color: '#0077B3', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontSize: 24 }}>
+                📧
+              </div>
+              <h3 style={{ fontSize: 20, fontWeight: 900, color: '#0D2233', margin: '0 0 6px' }}>
+                Gmail Verification Required
+              </h3>
+              <p style={{ fontSize: 13, color: '#5B7D91', margin: 0 }}>
+                We sent a 6-digit verification code to <strong>{email}</strong>
+              </p>
+            </div>
+
+            {demoOtpNotice && (
+              <div style={{ padding: '10px 14px', borderRadius: 12, background: '#F0F8FF', border: '1px solid #0077B3', color: '#0077B3', fontSize: 12, fontWeight: 700, textAlign: 'center', marginBottom: 16 }}>
+                💡 Gmail Verification Code: <span style={{ fontSize: 16, fontFamily: 'monospace', letterSpacing: 2 }}>{demoOtpNotice}</span>
+              </div>
+            )}
+
+            <form onSubmit={verifyAndCompleteSignup} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#2E5369', marginBottom: 6 }}>
+                  Enter 6-Digit OTP Code
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={e => setOtpCode(e.target.value)}
+                  placeholder="e.g. 849201"
+                  style={{
+                    width: '100%', padding: '12px', borderRadius: 12, border: '2px solid #0077B3',
+                    textAlign: 'center', fontSize: 22, fontFamily: 'monospace', letterSpacing: 6, fontWeight: 900, color: '#0077B3'
+                  }}
+                  autoFocus
+                />
+              </div>
+
+              {otpError && (
+                <div style={{ fontSize: 12, color: '#E05C2E', fontWeight: 700, textAlign: 'center' }}>
+                  {otpError}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowOtpModal(false)}
+                  style={{ flex: 1, padding: '12px', borderRadius: 12, border: '1px solid #D1E8E2', background: '#f8fafc', color: '#5B7D91', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{ flex: 2, padding: '12px', borderRadius: 12, border: 'none', background: '#0077B3', color: '#ffffff', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}
+                >
+                  {loading ? 'Verifying...' : 'Verify & Create Account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

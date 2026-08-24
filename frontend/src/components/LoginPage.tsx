@@ -16,6 +16,15 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
 
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [newPass, setNewPass] = useState('');
+  const [otpStep, setOtpStep] = useState<1 | 2>(1);
+  const [forgotNotice, setForgotNotice] = useState('');
+  const [forgotMsg, setForgotMsg] = useState('');
+  const [forgotErr, setForgotErr] = useState('');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -41,16 +50,76 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
       saveSession({ token: data.token, user: data.user });
       onLogin(data.user as UserProfile);
     } catch {
-      setError('Could not reach the TaxEaseBD server. Is the backend running on port 8000?');
+      setError('Could not reach the TaxEaseBD server.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleGuestAccess = () => {
-    // Explicit, honest guest mode: no backend call, no fabricated account -
-    // clearly labeled so it never masquerades as a real logged-in session.
     onLogin({ email: 'guest@taxeasebd.app', name: 'Guest', entity_type: 'individual' });
+  };
+
+  const handleSendResetOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotErr('');
+    setForgotMsg('');
+    if (!forgotEmail.trim() || !forgotEmail.includes('@')) {
+      setForgotErr('Please enter a valid email address.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/auth/send-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email: forgotEmail.trim(), purpose: 'forgot_password' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setForgotNotice(data.otp_demo || '');
+        setForgotMsg('6-Digit OTP code sent to your email.');
+        setOtpStep(2);
+      } else {
+        setForgotErr(await apiErrorMessage(res, 'Could not send reset code.'));
+      }
+    } catch {
+      setForgotErr('Failed to reach server.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotErr('');
+    if (!forgotOtp || forgotOtp.length < 6) {
+      setForgotErr('Please enter the 6-digit verification code.');
+      return;
+    }
+    if (!newPass || newPass.length < 6) {
+      setForgotErr('New password must be at least 6 characters.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/auth/reset-password', {
+        method: 'POST',
+        body: JSON.stringify({ email: forgotEmail.trim(), otp: forgotOtp.trim(), new_password: newPass }),
+      });
+      if (!res.ok) {
+        setForgotErr(await apiErrorMessage(res, 'Password reset failed.'));
+        return;
+      }
+      setShowForgotModal(false);
+      setEmail(forgotEmail.trim());
+      setPassword(newPass);
+      setError('');
+      alert('Password reset successfully! You can now log in with your new password.');
+    } catch {
+      setForgotErr('Failed to reach server.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -144,7 +213,11 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <label style={labelStyle}>Password</label>
-                <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#0077B3', fontWeight: 600 }}>
+                <button
+                  type="button"
+                  onClick={() => { setForgotEmail(email); setShowForgotModal(true); setOtpStep(1); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#0077B3', fontWeight: 600 }}
+                >
                   Forgot password?
                 </button>
               </div>
@@ -229,6 +302,97 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
           </p>
         </div>
       </div>
+
+      {/* FORGOT PASSWORD 6-DIGIT OTP MODAL */}
+      {showForgotModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 9999,
+          background: 'rgba(13, 34, 51, 0.75)', backdropFilter: 'blur(6px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+        }}>
+          <div style={{
+            background: '#ffffff', borderRadius: 20, padding: 32, width: '100%', maxWidth: 420,
+            boxShadow: '0 20px 50px rgba(0,0,0,0.3)', border: '1px solid #A3D1E0'
+          }}>
+            <div style={{ textAlign: 'center', marginBottom: 16 }}>
+              <div style={{ width: 56, height: 56, borderRadius: 16, background: 'rgba(0,119,179,0.1)', color: '#0077B3', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontSize: 24 }}>
+                🔑
+              </div>
+              <h3 style={{ fontSize: 20, fontWeight: 900, color: '#0D2233', margin: '0 0 6px' }}>
+                Reset Your Password
+              </h3>
+              <p style={{ fontSize: 13, color: '#5B7D91', margin: 0 }}>
+                {otpStep === 1 ? 'Enter your registered email to receive a 6-digit OTP code.' : `Enter the 6-digit code sent to ${forgotEmail}`}
+              </p>
+            </div>
+
+            {forgotNotice && (
+              <div style={{ padding: '10px 14px', borderRadius: 12, background: '#F0F8FF', border: '1px solid #0077B3', color: '#0077B3', fontSize: 12, fontWeight: 700, textAlign: 'center', marginBottom: 16 }}>
+                💡 Gmail Reset Code: <span style={{ fontSize: 16, fontFamily: 'monospace', letterSpacing: 2 }}>{forgotNotice}</span>
+              </div>
+            )}
+
+            {otpStep === 1 ? (
+              <form onSubmit={handleSendResetOtp} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#2E5369', marginBottom: 6 }}>Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    value={forgotEmail}
+                    onChange={e => setForgotEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1px solid #A3D1E0', fontSize: 14 }}
+                  />
+                </div>
+                {forgotErr && <div style={{ fontSize: 12, color: '#E05C2E', fontWeight: 700 }}>{forgotErr}</div>}
+                <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                  <button type="button" onClick={() => setShowForgotModal(false)} style={{ flex: 1, padding: '12px', borderRadius: 12, border: '1px solid #D1E8E2', background: '#f8fafc', color: '#5B7D91', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={loading} style={{ flex: 2, padding: '12px', borderRadius: 12, border: 'none', background: '#0077B3', color: '#ffffff', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+                    {loading ? 'Sending Code...' : 'Send Reset Code'}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#2E5369', marginBottom: 6 }}>6-Digit OTP Code</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={forgotOtp}
+                    onChange={e => setForgotOtp(e.target.value)}
+                    placeholder="e.g. 849201"
+                    style={{ width: '100%', padding: '12px', borderRadius: 12, border: '2px solid #0077B3', textAlign: 'center', fontSize: 20, fontFamily: 'monospace', letterSpacing: 4, fontWeight: 900 }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#2E5369', marginBottom: 6 }}>New Password</label>
+                  <input
+                    type="password"
+                    required
+                    value={newPass}
+                    onChange={e => setNewPass(e.target.value)}
+                    placeholder="Min 6 characters"
+                    style={{ width: '100%', padding: '12px', borderRadius: 12, border: '1px solid #A3D1E0', fontSize: 14 }}
+                  />
+                </div>
+                {forgotErr && <div style={{ fontSize: 12, color: '#E05C2E', fontWeight: 700 }}>{forgotErr}</div>}
+                <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                  <button type="button" onClick={() => setShowForgotModal(false)} style={{ flex: 1, padding: '12px', borderRadius: 12, border: '1px solid #D1E8E2', background: '#f8fafc', color: '#5B7D91', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                    Cancel
+                  </button>
+                  <button type="submit" disabled={loading} style={{ flex: 2, padding: '12px', borderRadius: 12, border: 'none', background: '#0077B3', color: '#ffffff', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+                    {loading ? 'Resetting...' : 'Reset Password'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

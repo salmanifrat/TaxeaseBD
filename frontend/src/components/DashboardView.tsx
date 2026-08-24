@@ -47,7 +47,9 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
               <span>NBR Finance Act 2024-2026 Aligned</span>
             </div>
             <h1 className="text-2xl md:text-3xl font-extrabold text-black tracking-tight">
-              {t.dashboard.welcome}
+              {summary?.user_name 
+                ? (language === 'bn' ? `স্বাগতম, ${summary.user_name}!` : `Welcome back, ${summary.user_name}!`)
+                : t.dashboard.welcome}
             </h1>
             <p className="text-sm text-slate-800">
               {t.dashboard.subtitle}
@@ -86,13 +88,15 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
             </div>
           </div>
           <div className="mt-4 flex items-baseline space-x-3">
-            <span className="text-4xl font-extrabold text-emerald-400">92 / 100</span>
+            <span className="text-4xl font-extrabold text-emerald-400">
+              {summary ? summary.compliance_score : 40} / 100
+            </span>
             <span className="text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-              {t.dashboard.scoreStatus}
+              {summary && summary.compliance_score >= 80 ? (language === 'bn' ? 'উৎকৃষ্ট - নিম্ন ঝুঁকি' : 'Excellent - Low Risk') : (language === 'bn' ? 'তথ্য যোগ করুন' : 'Complete Profile')}
             </span>
           </div>
           <div className="mt-3 w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-            <div className="bg-emerald-500 h-full rounded-full" style={{ width: '92%' }} />
+            <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${summary ? summary.compliance_score : 40}%` }} />
           </div>
           <p className="mt-3 text-xs text-slate-500">
             {(() => {
@@ -103,8 +107,8 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
               }
               const monthNameStr = target.toLocaleString(language === 'bn' ? 'bn-BD' : 'en-US', { month: 'short' });
               return language === 'bn' 
-                ? `ট্রেড লাইসেন্স ও ই-টিন আপডেট রয়েছে। আগামী ভ্যাট রিটার্ন ১৫ই ${monthNameStr}।` 
-                : `Trade License & E-TIN updated. Next VAT return due ${monthNameStr} 15.`;
+                ? `তালিকাবদ্ধ তথ্য সংরক্ষিত। আগামী ভ্যাট রিটার্ন ১৫ই ${monthNameStr}।` 
+                : `Profile documents verified. Next VAT return due ${monthNameStr} 15.`;
             })()}
           </p>
         </div>
@@ -120,13 +124,15 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
             </div>
           </div>
           <div className="mt-4 flex items-baseline space-x-3">
-            <span className="text-4xl font-extrabold text-amber-400">8.5%</span>
+            <span className="text-4xl font-extrabold text-amber-400">
+              {summary ? summary.audit_risk_percentage : 16.0}%
+            </span>
             <span className="text-xs font-medium text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
-              {t.dashboard.riskLow}
+              {summary && summary.audit_risk_percentage <= 10.0 ? (language === 'bn' ? 'কম ঝুঁকি' : 'Low Risk') : (language === 'bn' ? 'মাঝারি ঝুঁকি' : 'Moderate Risk')}
             </span>
           </div>
           <div className="mt-3 w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-            <div className="bg-amber-500 h-full rounded-full" style={{ width: '8.5%' }} />
+            <div className="bg-amber-500 h-full rounded-full" style={{ width: `${summary ? summary.audit_risk_percentage : 16.0}%` }} />
           </div>
           <p className="mt-3 text-xs text-slate-500">
             {language === 'bn' 
@@ -146,9 +152,19 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
             </div>
           </div>
           <div className="mt-4">
-            <span className="text-xl font-bold text-slate-900">Private Limited Company</span>
+            <span className="text-xl font-bold text-slate-900">
+              {summary?.registered_entity_type || (language === 'bn' ? 'ব্যক্তিগত করদাতা' : 'Individual Taxpayer')}
+            </span>
             <p className="text-xs text-slate-500 mt-1">
-              {language === 'bn' ? 'আরজেএসসি নিবন্ধন নং: C-189204' : 'RJSC Reg No: C-189204'}
+              {summary?.company_name ? (
+                <>
+                  <span className="font-semibold text-slate-800">{summary.company_name}</span>
+                  {summary?.rjsc_reg_no ? ` • RJSC: ${summary.rjsc_reg_no}` : ''}
+                </>
+              ) : (
+                summary?.rjsc_reg_no 
+                  ? `RJSC Reg No: ${summary.rjsc_reg_no}` 
+                  : (language === 'bn' ? 'ব্যক্তিগত অ্যাকাউন্ট (নিবন্ধন প্রযোজ্য নয়)' : 'Personal Account (Individual)'))}
             </p>
           </div>
           <button

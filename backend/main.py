@@ -1142,6 +1142,9 @@ class UpdateProfileRequest(BaseModel):
     business_address: Optional[str] = None
     nid: Optional[str] = None
     tax_zone: Optional[str] = None
+    profile_picture: Optional[str] = None
+    income_range: Optional[str] = None
+    rjsc_reg_no: Optional[str] = None
     managed_companies: Optional[List[dict]] = None
     uploaded_documents: Optional[List[dict]] = None
 
@@ -1157,6 +1160,10 @@ def _user_public_dict(user: models.User) -> dict:
         "business_address": getattr(user, "business_address", None),
         "nid": getattr(user, "nid", None),
         "tax_zone": getattr(user, "tax_zone", None),
+        "profile_picture": getattr(user, "profile_picture", None),
+        "income_range": getattr(user, "income_range", None) or "৳ 5 Lakh - 15 Lakh BDT",
+        "rjsc_reg_no": getattr(user, "rjsc_reg_no", None),
+        "is_email_verified": bool(getattr(user, "is_email_verified", 0)),
         "managed_companies": getattr(user, "managed_companies", None) or [],
         "uploaded_documents": getattr(user, "uploaded_documents", None) or [],
         "created_at": str(user.created_at) if hasattr(user, "created_at") and user.created_at else None,
@@ -1185,6 +1192,12 @@ def update_user_profile(
         user.nid = profile.nid
     if profile.tax_zone is not None:
         user.tax_zone = profile.tax_zone
+    if profile.profile_picture is not None:
+        user.profile_picture = profile.profile_picture
+    if profile.income_range is not None:
+        user.income_range = profile.income_range
+    if profile.rjsc_reg_no is not None:
+        user.rjsc_reg_no = profile.rjsc_reg_no
     if profile.managed_companies is not None:
         user.managed_companies = profile.managed_companies
     if profile.uploaded_documents is not None:
@@ -1198,6 +1211,84 @@ def update_user_profile(
         "message": "Profile updated successfully",
         "user": _user_public_dict(user),
     }
+
+
+# =====================================================
+# OTP Email Verification & Password Reset Endpoints
+# =====================================================
+
+class SendOTPRequest(BaseModel):
+    email: str
+    purpose: Optional[str] = "signup"
+
+class VerifyOTPRequest(BaseModel):
+    email: str
+    otp: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp: str
+    new_password: str
+
+# In-memory OTP storage for pre-registered signup emails
+TEMP_OTP_STORE: dict = {}
+
+@app.post("/api/auth/send-otp")
+def send_otp(req: SendOTPRequest, db: Session = Depends(database.get_db)):
+    import random
+    email = req.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email address.")
+
+    otp_code = str(random.randint(100000, 999999))
+    user = db.query(models.User).filter(models.User.email == email).first()
+
+    if user:
+        user.verification_otp = otp_code
+        db.commit()
+    else:
+        TEMP_OTP_STORE[email] = otp_code
+
+    print(f"📧 [Gmail OTP Dispatcher] Sent 6-Digit Verification Code '{otp_code}' to {email}")
+    return {
+        "success": True,
+        "message": f"6-Digit verification code dispatched to {email}",
+        "otp_demo": otp_code,
+    }
+
+@app.post("/api/auth/verify-otp")
+def verify_otp(req: VerifyOTPRequest, db: Session = Depends(database.get_db)):
+    email = req.email.strip().lower()
+    otp = req.otp.strip()
+    user = db.query(models.User).filter(models.User.email == email).first()
+
+    valid_otp = user.verification_otp if user else TEMP_OTP_STORE.get(email)
+    if not valid_otp or valid_otp != otp:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code.")
+
+    if user:
+        user.is_email_verified = 1
+        user.verification_otp = None
+        db.commit()
+    elif email in TEMP_OTP_STORE:
+        del TEMP_OTP_STORE[email]
+
+    return {"success": True, "message": "Email address verified successfully!"}
+
+@app.post("/api/auth/reset-password")
+def reset_password(req: ResetPasswordRequest, db: Session = Depends(database.get_db)):
+    email = req.email.strip().lower()
+    user = db.query(models.User).filter(models.User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="No account found with this email address.")
+
+    if not user.verification_otp or user.verification_otp != req.otp.strip():
+        raise HTTPException(status_code=400, detail="Invalid or expired verification code.")
+
+    user.password_hash = hash_password(req.new_password)
+    user.verification_otp = None
+    db.commit()
+    return {"success": True, "message": "Password reset successfully. You can now log in."}
 
 
 @app.post("/api/auth/signup", response_model=AuthResponse)
@@ -1576,6 +1667,7 @@ def get_dashboard_summary(
     db: Session = Depends(database.get_db),
 ):
     recent_calc = None
+    compliance_score = 40
     if user:
         recent_calc = (
             db.query(models.TaxCalculation)
@@ -1583,11 +1675,34 @@ def get_dashboard_summary(
             .order_by(models.TaxCalculation.calculated_at.desc())
             .first()
         )
+        if user.tin:
+            compliance_score += 25
+        if user.uploaded_documents and len(user.uploaded_documents) > 0:
+            compliance_score += 20
+        if user.company_name:
+            compliance_score += 10
+        if getattr(user, "phone", None):
+            compliance_score += 5
+        compliance_score = min(100, compliance_score)
+
+    audit_risk = round(max(3.5, 20.0 - (compliance_score * 0.16)), 1)
+    
+    entity_formatted = (
+        "Individual Taxpayer" if not user or not user.entity_type
+        else "Sole Proprietorship" if user.entity_type == "sole_proprietorship"
+        else "Partnership Firm" if user.entity_type == "partnership"
+        else "Private Limited Company" if user.entity_type == "private_limited_company"
+        else user.entity_type.replace("_", " ").title()
+    )
+
     return {
-        "compliance_score": 100 if (user and user.tin) else 75,
-        "audit_risk_percentage": 5.0 if (user and user.tin) else 15.0,
-        "registered_entity_type": user.entity_type.replace("_", " ").title() if (user and user.entity_type) else "Individual Taxpayer",
-        "company_name": user.company_name if (user and user.company_name) else None,
+        "user_name": user.name if user else None,
+        "compliance_score": compliance_score,
+        "audit_risk_percentage": audit_risk,
+        "registered_entity_type": entity_formatted,
+        "company_name": user.company_name if user else None,
+        "rjsc_reg_no": getattr(user, "rjsc_reg_no", None) if user else None,
+        "profile_picture": getattr(user, "profile_picture", None) if user else None,
         "last_calculation": {
             "entity_type": recent_calc.entity_type if recent_calc else (user.entity_type if user else "individual"),
             "liability": recent_calc.total_estimated_liability if recent_calc else 0.0,

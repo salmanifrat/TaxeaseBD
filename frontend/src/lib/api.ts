@@ -41,6 +41,9 @@ export interface UserProfile {
   business_address?: string | null;
   nid?: string | null;
   tax_zone?: string | null;
+  profile_picture?: string | null;
+  income_range?: string | null;
+  rjsc_reg_no?: string | null;
   managed_companies?: ManagedCompany[] | null;
   uploaded_documents?: UploadedDocItem[] | null;
   created_at?: string | null;
