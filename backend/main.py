@@ -1017,7 +1017,7 @@ def signup_user(auth: AuthRequest, db: Session = Depends(database.get_db)):
 async def upload_document(
     file: UploadFile = File(...),
     doc_category: Optional[str] = Form(None),
-    token: Optional[str] = Header(None, alias="Authorization"),
+    user: Optional[models.User] = Depends(get_current_user_optional),
     db: Session = Depends(database.get_db),
 ):
     if not file.filename:
@@ -1038,7 +1038,6 @@ async def upload_document(
     extracted_tin = extract_tin_from_file(file_path, file.filename)
     auto_updated_tin = False
 
-    user = get_current_user_optional(token=token, db=db)
     if user and isinstance(user, models.User):
         doc_id = doc_category or f"doc_{timestamp}"
         existing_docs = list(user.uploaded_documents or [])
