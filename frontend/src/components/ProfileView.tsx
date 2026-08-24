@@ -207,7 +207,19 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
     setSaveSuccess(false);
 
     try {
-      const updated = await updateUserProfile(formData);
+      const docsList = Object.values(uploadedVault).map(v => ({
+        docId: v.docId,
+        filename: v.filename,
+        uploadedAt: v.uploadedAt,
+        size: v.size,
+        status: v.status,
+      }));
+      const payload = {
+        ...formData,
+        uploaded_documents: docsList,
+        managed_companies: managedCompanies,
+      };
+      const updated = await updateUserProfile(payload);
       onUpdateUser(updated);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
