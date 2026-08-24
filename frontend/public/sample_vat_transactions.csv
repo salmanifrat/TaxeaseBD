@@ -1,0 +1,6 @@
+Date,Invoice #,Buyer Name / BIN,Item Description,Sales Value (BDT),VAT Rate,Input Tax Credit (BDT)
+2026-08-05,INV-2026-101,Walton Hi-Tech Industries BIN: 001829304,IT Equipment & Computer Supply,350000,15,15000
+2026-08-10,INV-2026-102,Aarong BRAC Social Enterprises BIN: 002948102,Textile Software Support,180000,15,8000
+2026-08-14,INV-2026-103,Square Pharmaceuticals Ltd BIN: 004829103,Cloud Infrastructure Maintenance,500000,15,25000
+2026-08-18,INV-2026-104,Pathao Limited BIN: 003928104,Logistics API Integration,220000,15,10000
+2026-08-22,INV-2026-105,Grameenphone Ltd BIN: 001928374,Telecom Consulting Services,400000,15,18000

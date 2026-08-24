@@ -284,6 +284,14 @@ export default function MushakView() {
             <Upload className="w-4 h-4" />
             <span>{language === 'bn' ? 'CSV আপলোড করুন' : 'Upload CSV'}</span>
           </button>
+          <a
+            href="/sample_vat_transactions.csv"
+            download="sample_vat_transactions.csv"
+            className="px-3 py-2.5 rounded-xl bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 font-semibold text-xs transition-all flex items-center space-x-1.5"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>{language === 'bn' ? 'স্যাম্পল CSV ডেমো' : 'Download Sample CSV'}</span>
+          </a>
           <button
             onClick={handleExportPdf}
             disabled={isExportingPdf}
