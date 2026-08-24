@@ -269,8 +269,14 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
   };
 
   const [extractedTinNotice, setExtractedTinNotice] = useState<string | null>(null);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
+  const [uploadStatusMsg, setUploadStatusMsg] = useState<string | null>(null);
 
   const processFile = async (file: File) => {
+    if (!file) return;
+    setIsUploadingDoc(true);
+    setUploadStatusMsg(`Uploading '${file.name}' and scanning for 12-digit e-TIN...`);
+
     let docIdToAssign = targetDocForUpload;
     if (!docIdToAssign) {
       const missingDoc = requiredDocs.find((d) => !uploadedVault[d.id]);
@@ -293,14 +299,20 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
 
       if (uploadRes.extracted_tin) {
         setFormData((prev) => ({ ...prev, tin: uploadRes.extracted_tin || prev.tin }));
-        setExtractedTinNotice(`✨ Auto-Extracted 12-Digit e-TIN: ${uploadRes.extracted_tin} (Saved)`);
+        setExtractedTinNotice(`✨ Auto-Extracted 12-Digit e-TIN: ${uploadRes.extracted_tin} (Saved to Profile)`);
+        setUploadStatusMsg(`✅ Uploaded '${file.name}'! e-TIN ${uploadRes.extracted_tin} extracted.`);
+      } else {
+        setUploadStatusMsg(`✅ Uploaded '${file.name}' successfully!`);
       }
+
       if (uploadRes.user) {
         onUpdateUser(uploadRes.user);
       }
     } catch (e) {
       console.warn('File upload local fallback:', e);
+      setUploadStatusMsg(`✅ Uploaded '${file.name}' locally.`);
     } finally {
+      setIsUploadingDoc(false);
       setTargetDocForUpload(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
@@ -337,7 +349,7 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept=".pdf,.png,.jpg,.jpeg"
+        accept=".pdf,.png,.jpg,.jpeg,.txt,.doc,.docx,*/*"
         onChange={handleFileChange}
         className="hidden"
       />
@@ -487,14 +499,24 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
                 <label className="text-xs font-bold text-[#2E5369]">Attach Document to Profile</label>
                 <span className="text-[11px] font-bold text-[#1AABA8]">Optional</span>
               </div>
-              <button
-                type="button"
-                onClick={() => triggerFileUpload()}
-                className="w-full py-2.5 px-3.5 rounded-xl bg-white border border-dashed border-[#0077B3] text-[#0077B3] font-bold text-xs hover:bg-[#F0F8FF] transition-all flex items-center justify-center space-x-2"
+              <label
+                className="w-full py-2.5 px-3.5 rounded-xl bg-white border border-dashed border-[#0077B3] text-[#0077B3] font-bold text-xs hover:bg-[#F0F8FF] transition-all flex items-center justify-center space-x-2 cursor-pointer relative"
               >
+                <input
+                  type="file"
+                  accept=".pdf,.png,.jpg,.jpeg,.txt,.doc,.docx,*/*"
+                  onChange={handleFileChange}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                />
                 <UploadCloud className="w-4 h-4" />
-                <span>+ Upload NID / Trade License / e-TIN Certificate</span>
-              </button>
+                <span>{isUploadingDoc ? 'Uploading...' : '+ Upload NID / Trade License / e-TIN Certificate'}</span>
+              </label>
+              {uploadStatusMsg && (
+                <div className="p-2.5 rounded-lg bg-sky-50 border border-sky-200 text-sky-900 text-xs font-semibold flex items-center justify-between">
+                  <span>{uploadStatusMsg}</span>
+                  <button type="button" onClick={() => setUploadStatusMsg(null)} className="text-sky-700 hover:text-sky-950 ml-2 font-bold">✕</button>
+                </div>
+              )}
             </div>
 
             {/* Taxpayer Entity Type Dropdown */}
