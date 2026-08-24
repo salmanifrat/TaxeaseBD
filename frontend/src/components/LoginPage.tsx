@@ -76,7 +76,7 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
       });
       if (res.ok) {
         const data = await res.json();
-        setForgotNotice(data.otp_demo || '');
+        setForgotNotice(data.dev_otp || '');
         setForgotMsg('6-Digit OTP code sent to your email.');
         setOtpStep(2);
       } else {
@@ -362,6 +362,17 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
                     style={{ width: '100%', padding: '12px', borderRadius: 12, border: '2px solid #0077B3', textAlign: 'center', fontSize: 20, fontFamily: 'monospace', letterSpacing: 4, fontWeight: 900 }}
                   />
                 </div>
+                {forgotNotice && (
+                  <div style={{ textAlign: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => setForgotOtp(forgotNotice)}
+                      style={{ background: 'none', border: 'none', color: '#0077B3', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      ⚡ Didn&apos;t receive email? Click to auto-fill code ({forgotNotice})
+                    </button>
+                  </div>
+                )}
                 <div>
                   <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#2E5369', marginBottom: 6 }}>New Password</label>
                   <input

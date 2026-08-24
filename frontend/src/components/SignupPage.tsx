@@ -78,7 +78,7 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
       });
       if (otpRes.ok) {
         const otpData = await otpRes.json();
-        setDemoOtpNotice(otpData.otp_demo || '');
+        setDemoOtpNotice(otpData.dev_otp || '');
         setShowOtpModal(true);
       } else {
         // Direct fallback if OTP service note
@@ -510,6 +510,18 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
                   autoFocus
                 />
               </div>
+
+              {demoOtpNotice && (
+                <div style={{ textAlign: 'center' }}>
+                  <button
+                    type="button"
+                    onClick={() => setOtpCode(demoOtpNotice)}
+                    style={{ background: 'none', border: 'none', color: '#0077B3', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    ⚡ Didn&apos;t receive email? Click to auto-fill code ({demoOtpNotice})
+                  </button>
+                </div>
+              )}
 
               {otpError && (
                 <div style={{ fontSize: 12, color: '#E05C2E', fontWeight: 700, textAlign: 'center' }}>
