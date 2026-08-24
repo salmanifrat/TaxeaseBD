@@ -82,17 +82,33 @@ def extract_tin_from_file(file_path: str, filename: str) -> Optional[str]:
         except Exception:
             pass
 
-    # Match formatted 12-digit e-TIN (e.g. 8293-1029-4720 or 8293 1029 4720)
-    formatted_match = re.search(r'\b([1-9]\d{3})[-\s]?(\d{4})[-\s]?(\d{4})\b', text_content)
+    # 1. Contextual TIN match near keyword (e.g. "TIN : 000000000000" or "Taxpayer Identification Number: 8293-1029-4720")
+    context_match = re.search(
+        r'(?:TIN|e-TIN|Taxpayer\s*Identification\s*Number|টিআইএন|ই-টিন)[\s:\-\n]*(\d{4}[-\s]?\d{4}[-\s]?\d{4}|\d{12})\b',
+        text_content,
+        re.IGNORECASE
+    )
+    if context_match:
+        digits = re.sub(r'\D', '', context_match.group(1))
+        if len(digits) == 12:
+            return digits
+
+    # 2. Formatted 12-digit e-TIN (e.g. 8293-1029-4720 or 8293 1029 4720)
+    formatted_match = re.search(r'\b(\d{4})[-\s](\d{4})[-\s](\d{4})\b', text_content)
     if formatted_match:
         digits = "".join(formatted_match.groups())
         if len(digits) == 12:
             return digits
 
-    # Match raw 12 consecutive digits
+    # 3. Standalone 12 consecutive digits (preferring non-zero starting digits)
     raw_match = re.search(r'\b([1-9]\d{11})\b', text_content)
     if raw_match:
         return raw_match.group(1)
+
+    # 4. Any 12 consecutive digits
+    any_12_match = re.search(r'\b(\d{12})\b', text_content)
+    if any_12_match:
+        return any_12_match.group(1)
 
     return None
 
@@ -1304,13 +1320,13 @@ def get_dashboard_summary(
             .first()
         )
     return {
-        "compliance_score": 92,
-        "audit_risk_percentage": 8.5,
-        "registered_entity_type": user.entity_type if user and user.entity_type else "Private Limited Company",
-        "rjsc_reg_no": "C-189204",
+        "compliance_score": 100 if (user and user.tin) else 75,
+        "audit_risk_percentage": 5.0 if (user and user.tin) else 15.0,
+        "registered_entity_type": user.entity_type.replace("_", " ").title() if (user and user.entity_type) else "Individual Taxpayer",
+        "company_name": user.company_name if (user and user.company_name) else None,
         "last_calculation": {
-            "entity_type": recent_calc.entity_type if recent_calc else "private_limited_company",
-            "liability": recent_calc.total_estimated_liability if recent_calc else 165000.0,
+            "entity_type": recent_calc.entity_type if recent_calc else (user.entity_type if user else "individual"),
+            "liability": recent_calc.total_estimated_liability if recent_calc else 0.0,
         } if recent_calc else None
     }
 
@@ -1320,21 +1336,17 @@ def get_form_prefill(
     user: Optional[models.User] = Depends(get_current_user_optional),
     db: Session = Depends(database.get_db),
 ):
-    name = user.name if user else "Tanvir Ahmed"
-    tin = user.tin if user and user.tin else "7489-1029-3841"
-    email = user.email if user else "tanvir@techsolutions.bd"
-    entity = user.entity_type if user and user.entity_type else "private_limited_company"
     return {
-        "taxpayer_name": name,
-        "e_tin": tin,
-        "email": email,
-        "entity_type": entity,
+        "taxpayer_name": user.name if (user and user.name) else "",
+        "e_tin": user.tin if (user and user.tin) else "",
+        "email": user.email if (user and user.email) else "",
+        "entity_type": user.entity_type if (user and user.entity_type) else "individual",
         "assessment_year": "2026-2027",
         "income_year": "2025-2026",
-        "circle_zone": "Tax Circle 115, Zone 06, Dhaka",
-        "business_name": "TechSolutions Bangladesh Ltd",
-        "trade_license_no": "TRAD/DSCC/019283/2024",
-        "bin_no": "004928102-0101",
+        "tax_zone": user.tax_zone if (user and user.tax_zone) else "",
+        "business_name": user.company_name if (user and user.company_name) else "",
+        "business_address": user.business_address if (user and user.business_address) else "",
+        "nid": user.nid if (user and user.nid) else "",
     }
 
 

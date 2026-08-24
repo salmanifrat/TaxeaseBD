@@ -59,16 +59,34 @@ export default function MushakView() {
   const totalInputCredit = transactions.reduce((acc, curr) => acc + curr.inputCredit, 0);
   const netPayableNbr = totalVatCollected - totalInputCredit;
 
-  const handleAddSample = async () => {
+  const [showModal, setShowModal] = useState(false);
+  const [newTx, setNewTx] = useState({
+    date: new Date().toISOString().split('T')[0],
+    invoiceNo: '',
+    customerName: '',
+    item: '',
+    amount: '',
+    vatRate: '15',
+    inputCredit: '0',
+  });
+
+  const handleAddCustomTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(newTx.amount) || 0;
+    const rate = parseFloat(newTx.vatRate) || 15;
+    const credit = parseFloat(newTx.inputCredit) || 0;
+    if (amt <= 0) return;
+
     const payload = {
-      transaction_date: '2026-07-28',
-      invoice_no: `INV-2026-00${transactions.length + 1}`,
-      customer_name: 'Chaldal Limited BIN: 008192019',
-      item_description: 'E-Commerce Solution Maintenance',
-      amount: 200000,
-      vat_rate: 15,
-      input_credit: 10000,
+      transaction_date: newTx.date,
+      invoice_no: newTx.invoiceNo.trim() || `INV-${Date.now().toString().slice(-6)}`,
+      customer_name: newTx.customerName.trim() || 'General Customer',
+      item_description: newTx.item.trim() || 'Taxable Goods / Services',
+      amount: amt,
+      vat_rate: rate,
+      input_credit: credit,
     };
+
     try {
       const res = await apiFetch('/api/mushak/transactions', {
         method: 'POST',
@@ -87,22 +105,27 @@ export default function MushakView() {
           vatAmount: saved.vatAmount,
           inputCredit: saved.inputCredit,
         }]);
+        setShowModal(false);
+        setNewTx({ date: new Date().toISOString().split('T')[0], invoiceNo: '', customerName: '', item: '', amount: '', vatRate: '15', inputCredit: '0' });
         return;
       }
     } catch {}
 
-    const newTx: Transaction = {
+    const vatAmt = amt * (rate / 100);
+    const localTx: Transaction = {
       id: String(Date.now()),
-      date: '2026-07-28',
-      invoiceNo: `INV-2026-00${transactions.length + 1}`,
-      customerName: 'Chaldal Limited BIN: 008192019',
-      item: 'E-Commerce Solution Maintenance',
-      amount: 200000,
-      vatRate: 15,
-      vatAmount: 30000,
-      inputCredit: 10000,
+      date: payload.transaction_date,
+      invoiceNo: payload.invoice_no,
+      customerName: payload.customer_name,
+      item: payload.item_description,
+      amount: amt,
+      vatRate: rate,
+      vatAmount: vatAmt,
+      inputCredit: credit,
     };
-    setTransactions([...transactions, newTx]);
+    setTransactions((prev) => [...prev, localTx]);
+    setShowModal(false);
+    setNewTx({ date: new Date().toISOString().split('T')[0], invoiceNo: '', customerName: '', item: '', amount: '', vatRate: '15', inputCredit: '0' });
   };
 
 
@@ -347,7 +370,7 @@ export default function MushakView() {
 
           <div className="flex items-center space-x-3">
             <button
-              onClick={handleAddSample}
+              onClick={() => setShowModal(true)}
               className="px-3 py-1.5 rounded-lg bg-purple-500/20 text-purple-700 border border-purple-500/30 text-xs font-semibold hover:bg-purple-500/30 transition-all flex items-center space-x-1"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -392,6 +415,124 @@ export default function MushakView() {
           </table>
         </div>
       </div>
+
+      {/* Add Transaction Modal */}
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-lg w-full border border-slate-300 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-base font-bold text-slate-900 flex items-center space-x-2">
+                <Receipt className="w-5 h-5 text-purple-600" />
+                <span>Add VAT Transaction / Invoice (Mushak 6.3)</span>
+              </h3>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleAddCustomTransaction} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Transaction Date</label>
+                  <input
+                    type="date"
+                    value={newTx.date}
+                    onChange={(e) => setNewTx({ ...newTx, date: e.target.value })}
+                    className="w-full mt-1 p-2 border rounded-xl text-xs font-medium"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Invoice No.</label>
+                  <input
+                    type="text"
+                    value={newTx.invoiceNo}
+                    onChange={(e) => setNewTx({ ...newTx, invoiceNo: e.target.value })}
+                    placeholder="e.g. INV-2026-001"
+                    className="w-full mt-1 p-2 border rounded-xl text-xs font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700">Customer / Buyer Name & BIN</label>
+                <input
+                  type="text"
+                  value={newTx.customerName}
+                  onChange={(e) => setNewTx({ ...newTx, customerName: e.target.value })}
+                  placeholder="e.g. Apex Footwear Ltd (BIN: 001928374)"
+                  className="w-full mt-1 p-2 border rounded-xl text-xs font-medium"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700">Item / Service Description</label>
+                <input
+                  type="text"
+                  value={newTx.item}
+                  onChange={(e) => setNewTx({ ...newTx, item: e.target.value })}
+                  placeholder="e.g. IT Consulting & Maintenance"
+                  className="w-full mt-1 p-2 border rounded-xl text-xs font-medium"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Amount (BDT)</label>
+                  <input
+                    type="number"
+                    value={newTx.amount}
+                    onChange={(e) => setNewTx({ ...newTx, amount: e.target.value })}
+                    placeholder="250000"
+                    className="w-full mt-1 p-2 border rounded-xl text-xs font-mono font-bold"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700">VAT Rate (%)</label>
+                  <select
+                    value={newTx.vatRate}
+                    onChange={(e) => setNewTx({ ...newTx, vatRate: e.target.value })}
+                    className="w-full mt-1 p-2 border rounded-xl text-xs font-medium bg-white"
+                  >
+                    <option value="15">15% Standard</option>
+                    <option value="10">10% Reduced</option>
+                    <option value="7.5">7.5% Goods</option>
+                    <option value="5">5% Services</option>
+                    <option value="0">0% Exempt</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Input Credit (BDT)</label>
+                  <input
+                    type="number"
+                    value={newTx.inputCredit}
+                    onChange={(e) => setNewTx({ ...newTx, inputCredit: e.target.value })}
+                    placeholder="0"
+                    className="w-full mt-1 p-2 border rounded-xl text-xs font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold border hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-purple-600 text-white hover:bg-purple-700"
+                >
+                  Save Transaction
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
