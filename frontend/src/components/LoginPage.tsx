@@ -75,12 +75,31 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
         body: JSON.stringify({ email: forgotEmail.trim(), purpose: 'forgot_password' }),
       });
       if (res.ok) {
-        const data = await res.json();
-        setForgotNotice(data.dev_otp || '');
         setForgotMsg('6-Digit OTP code sent to your email.');
         setOtpStep(2);
       } else {
         setForgotErr(await apiErrorMessage(res, 'Could not send reset code.'));
+      }
+    } catch {
+      setForgotErr('Failed to reach server.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendForgotCode = async () => {
+    setLoading(true);
+    setForgotErr('');
+    setForgotMsg('');
+    try {
+      const res = await apiFetch('/api/auth/send-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email: forgotEmail.trim(), purpose: 'forgot_password' }),
+      });
+      if (res.ok) {
+        setForgotMsg('✓ Fresh 6-digit code sent to your email!');
+      } else {
+        setForgotErr('Failed to resend code.');
       }
     } catch {
       setForgotErr('Failed to reach server.');
@@ -362,15 +381,19 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
                     style={{ width: '100%', padding: '12px', borderRadius: 12, border: '2px solid #0077B3', textAlign: 'center', fontSize: 20, fontFamily: 'monospace', letterSpacing: 4, fontWeight: 900 }}
                   />
                 </div>
-                {forgotNotice && (
-                  <div style={{ textAlign: 'center' }}>
-                    <button
-                      type="button"
-                      onClick={() => setForgotOtp(forgotNotice)}
-                      style={{ background: 'none', border: 'none', color: '#0077B3', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
-                    >
-                      ⚡ Didn&apos;t receive email? Click to auto-fill code ({forgotNotice})
-                    </button>
+                <div style={{ textAlign: 'center', marginTop: 4 }}>
+                  <button
+                    type="button"
+                    onClick={handleResendForgotCode}
+                    disabled={loading}
+                    style={{ background: 'none', border: 'none', color: '#0077B3', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    {loading ? 'Resending code...' : "Didn't get the code? Resend Code"}
+                  </button>
+                </div>
+                {forgotMsg && (
+                  <div style={{ fontSize: 12, color: '#0D8C89', fontWeight: 700, textAlign: 'center' }}>
+                    {forgotMsg}
                   </div>
                 )}
                 <div>

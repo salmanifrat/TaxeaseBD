@@ -62,7 +62,8 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
 
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpCode, setOtpCode] = useState('');
-  const [demoOtpNotice, setDemoOtpNotice] = useState('');
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendMsg, setResendMsg] = useState('');
   const [otpError, setOtpError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -77,17 +78,35 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
         body: JSON.stringify({ email: email.trim(), purpose: 'signup' }),
       });
       if (otpRes.ok) {
-        const otpData = await otpRes.json();
-        setDemoOtpNotice(otpData.dev_otp || '');
         setShowOtpModal(true);
       } else {
-        // Direct fallback if OTP service note
         await completeSignup();
       }
     } catch {
       await completeSignup();
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    setResendLoading(true);
+    setResendMsg('');
+    setOtpError('');
+    try {
+      const res = await apiFetch('/api/auth/send-otp', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim(), purpose: 'signup' }),
+      });
+      if (res.ok) {
+        setResendMsg('✓ Fresh 6-digit code sent to your email!');
+      } else {
+        setOtpError('Failed to resend code. Please try again.');
+      }
+    } catch {
+      setOtpError('Failed to resend code.');
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -511,15 +530,20 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
                 />
               </div>
 
-              {demoOtpNotice && (
-                <div style={{ textAlign: 'center' }}>
-                  <button
-                    type="button"
-                    onClick={() => setOtpCode(demoOtpNotice)}
-                    style={{ background: 'none', border: 'none', color: '#0077B3', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
-                  >
-                    ⚡ Didn&apos;t receive email? Click to auto-fill code ({demoOtpNotice})
-                  </button>
+              <div style={{ textAlign: 'center', marginTop: 4 }}>
+                <button
+                  type="button"
+                  onClick={handleResendCode}
+                  disabled={resendLoading}
+                  style={{ background: 'none', border: 'none', color: '#0077B3', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  {resendLoading ? 'Resending code...' : "Didn't get the code? Resend Code"}
+                </button>
+              </div>
+
+              {resendMsg && (
+                <div style={{ fontSize: 12, color: '#0D8C89', fontWeight: 700, textAlign: 'center' }}>
+                  {resendMsg}
                 </div>
               )}
 

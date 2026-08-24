@@ -1357,14 +1357,10 @@ def send_otp(req: SendOTPRequest, db: Session = Depends(database.get_db)):
     body = f"Your TaxEaseBD 6-digit email verification code is: {otp_code}"
     send_smtp_email(to_email=email, subject=subject, body_text=body, otp_code=otp_code)
 
-    has_smtp = bool(os.getenv("SMTP_USER") and os.getenv("SMTP_PASSWORD"))
-    res = {
+    return {
         "success": True,
-        "message": f"6-Digit verification code dispatched to {email}",
+        "message": f"6-Digit verification code sent to {email}",
     }
-    if not has_smtp:
-        res["dev_otp"] = otp_code
-    return res
 
 @app.post("/api/auth/verify-otp")
 def verify_otp(req: VerifyOTPRequest, db: Session = Depends(database.get_db)):
