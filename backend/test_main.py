@@ -3,6 +3,7 @@ Unit tests for TaxEaseBD Backend AI Engine & Tax Calculation Logic.
 Runs without external network dependencies.
 """
 
+import os
 import unittest
 from database import SessionLocal
 from main import (
@@ -131,6 +132,21 @@ class TestTaxEaseBDBackend(unittest.TestCase):
         response = calculate_tax(query=query, db=self.db, user=None)
         self.assertEqual(response.tax_free_threshold, 375000.0)
         self.assertEqual(response.income_tax_or_corporate_tax, 22500.0)
+
+    # ----------------------------------------------------
+    # 6. e-TIN Document Extraction Unit Test
+    # ----------------------------------------------------
+    def test_extract_tin_from_file(self):
+        from main import extract_tin_from_file
+        test_file = os.path.join(os.path.dirname(__file__), "test_tin_sample.txt")
+        with open(test_file, "w") as f:
+            f.write("Government of Bangladesh NBR e-TIN Certificate\nTaxpayer Identification Number: 8293-1029-4720\nTax Zone: 8")
+        try:
+            extracted = extract_tin_from_file(test_file, "test_tin_sample.txt")
+            self.assertEqual(extracted, "829310294720")
+        finally:
+            if os.path.exists(test_file):
+                os.remove(test_file)
 
 
 if __name__ == "__main__":

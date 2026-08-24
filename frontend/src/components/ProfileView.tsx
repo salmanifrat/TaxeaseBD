@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
-import { UserProfile, updateUserProfile, apiFetch } from '@/lib/api';
+import { UserProfile, updateUserProfile, apiFetch, uploadDocumentFile } from '@/lib/api';
 import {
   User,
   Building2,
@@ -268,26 +268,42 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
     processFile(files[0]);
   };
 
-  const processFile = (file: File) => {
+  const [extractedTinNotice, setExtractedTinNotice] = useState<string | null>(null);
+
+  const processFile = async (file: File) => {
     let docIdToAssign = targetDocForUpload;
     if (!docIdToAssign) {
       const missingDoc = requiredDocs.find((d) => !uploadedVault[d.id]);
       docIdToAssign = missingDoc ? missingDoc.id : requiredDocs[0].id;
     }
 
-    const newVault = {
-      ...uploadedVault,
-      [docIdToAssign]: {
-        docId: docIdToAssign,
-        filename: file.name,
-        uploadedAt: new Date().toISOString().split('T')[0],
-        size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
-        status: 'Verified' as const,
-      },
-    };
-    saveVaultState(newVault);
-    setTargetDocForUpload(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    try {
+      const uploadRes = await uploadDocumentFile(file, docIdToAssign);
+      const newVault = {
+        ...uploadedVault,
+        [docIdToAssign]: {
+          docId: docIdToAssign,
+          filename: uploadRes.filename,
+          uploadedAt: new Date().toISOString().split('T')[0],
+          size: uploadRes.size,
+          status: 'Verified' as const,
+        },
+      };
+      saveVaultState(newVault);
+
+      if (uploadRes.extracted_tin) {
+        setFormData((prev) => ({ ...prev, tin: uploadRes.extracted_tin || prev.tin }));
+        setExtractedTinNotice(`✨ Auto-Extracted 12-Digit e-TIN: ${uploadRes.extracted_tin} (Saved)`);
+      }
+      if (uploadRes.user) {
+        onUpdateUser(uploadRes.user);
+      }
+    } catch (e) {
+      console.warn('File upload local fallback:', e);
+    } finally {
+      setTargetDocForUpload(null);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   const handleRemoveDoc = (docId: string) => {
@@ -408,6 +424,13 @@ export default function ProfileView({ user, onUpdateUser }: ProfileViewProps) {
             <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>Taxpayer profile changes updated successfully!</span>
+            </div>
+          )}
+
+          {extractedTinNotice && (
+            <div className="p-3.5 rounded-xl bg-teal-50 border border-teal-300 text-teal-900 text-xs font-bold flex items-center justify-between">
+              <span>{extractedTinNotice}</span>
+              <button type="button" onClick={() => setExtractedTinNotice(null)} className="text-teal-700 hover:text-teal-900 font-bold ml-2">✕</button>
             </div>
           )}
 

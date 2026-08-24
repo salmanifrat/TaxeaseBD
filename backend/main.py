@@ -19,12 +19,15 @@ every Finance Act):
 
 import os
 import re
+import shutil
+import time
 from enum import Enum
 from typing import List, Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -37,14 +40,11 @@ load_dotenv()
 # Initialize DB tables on startup
 models.Base.metadata.create_all(bind=database.engine)
 
-app = FastAPI(title="TaxEaseBD Tax Calculator & Compliance API")
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# CORS: restrict to the frontend origin(s) instead of allowing "*".
-# Override with FRONTEND_ORIGINS="http://example.com,http://other.com" in .env
-_default_origins = "http://localhost:3000,http://127.0.0.1:3000"
-FRONTEND_ORIGINS = [
-    o.strip() for o in os.getenv("FRONTEND_ORIGINS", _default_origins).split(",") if o.strip()
-]
+app = FastAPI(title="TaxEaseBD Tax Calculator & Compliance API")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,6 +53,48 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def extract_tin_from_file(file_path: str, filename: str) -> Optional[str]:
+    """
+    Scans an uploaded PDF, text, or document file for a 12-digit Bangladeshi e-TIN number.
+    Returns standard 12-digit string (e.g. "829310294720") if found, else None.
+    """
+    text_content = ""
+    ext = os.path.splitext(filename)[1].lower()
+
+    if ext == ".pdf":
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(file_path)
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text_content += "\n" + extracted
+        except Exception as e:
+            print(f"PDF text extraction warning: {e}")
+
+    if not text_content:
+        try:
+            with open(file_path, "rb") as f:
+                raw_bytes = f.read(1000000)
+                text_content = raw_bytes.decode("latin1", errors="ignore")
+        except Exception:
+            pass
+
+    # Match formatted 12-digit e-TIN (e.g. 8293-1029-4720 or 8293 1029 4720)
+    formatted_match = re.search(r'\b([1-9]\d{3})[-\s]?(\d{4})[-\s]?(\d{4})\b', text_content)
+    if formatted_match:
+        digits = "".join(formatted_match.groups())
+        if len(digits) == 12:
+            return digits
+
+    # Match raw 12 consecutive digits
+    raw_match = re.search(r'\b([1-9]\d{11})\b', text_content)
+    if raw_match:
+        return raw_match.group(1)
+
+    return None
 
 
 # =====================================================
@@ -969,6 +1011,68 @@ def signup_user(auth: AuthRequest, db: Session = Depends(database.get_db)):
         user=_user_public_dict(new_user),
         message="Account created successfully",
     )
+
+
+@app.post("/api/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    doc_category: Optional[str] = Form(None),
+    token: Optional[str] = Header(None, alias="Authorization"),
+    db: Session = Depends(database.get_db),
+):
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+
+    safe_name = re.sub(r'[^a-zA-Z0-9_.-]', '_', file.filename)
+    timestamp = int(time.time() * 1000)
+    saved_filename = f"{timestamp}_{safe_name}"
+    file_path = os.path.join(UPLOAD_DIR, saved_filename)
+
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    file_size_bytes = os.path.getsize(file_path)
+    file_size_str = f"{(file_size_bytes / (1024 * 1024)):.1f} MB" if file_size_bytes >= 1024 * 1024 else f"{(file_size_bytes / 1024):.0f} KB"
+
+    # Auto-extract 12-digit e-TIN from uploaded document
+    extracted_tin = extract_tin_from_file(file_path, file.filename)
+    auto_updated_tin = False
+
+    user = get_current_user_optional(token=token, db=db)
+    if user and isinstance(user, models.User):
+        doc_id = doc_category or f"doc_{timestamp}"
+        existing_docs = list(user.uploaded_documents or [])
+        updated_docs = [d for d in existing_docs if d.get("docId") != doc_id]
+        updated_docs.append({
+            "docId": doc_id,
+            "filename": file.filename,
+            "saved_filename": saved_filename,
+            "file_url": f"/uploads/{saved_filename}",
+            "uploadedAt": time.strftime("%Y-%m-%d"),
+            "size": file_size_str,
+            "status": "Verified",
+            "extracted_tin": extracted_tin,
+        })
+        user.uploaded_documents = updated_docs
+
+        if extracted_tin and len(extracted_tin) == 12:
+            user.tin = extracted_tin
+            auto_updated_tin = True
+
+        db.commit()
+        db.refresh(user)
+
+    return {
+        "success": True,
+        "filename": file.filename,
+        "file_url": f"/uploads/{saved_filename}",
+        "size": file_size_str,
+        "doc_id": doc_category or f"doc_{timestamp}",
+        "extracted_tin": extracted_tin,
+        "auto_updated_tin": auto_updated_tin,
+        "message": f"File '{file.filename}' uploaded successfully" + (f" (Auto-extracted e-TIN: {extracted_tin})" if extracted_tin else ""),
+        "user": _user_public_dict(user) if user else None,
+    }
 
 
 @app.post("/api/auth/login", response_model=AuthResponse)

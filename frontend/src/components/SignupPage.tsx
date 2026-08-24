@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { apiFetch, apiErrorMessage, saveSession, UserProfile } from '@/lib/api';
+import { apiFetch, apiErrorMessage, saveSession, UserProfile, uploadDocumentFile } from '@/lib/api';
 
 interface SignupPageProps {
   onSignup: (user: UserProfile) => void;
@@ -31,18 +31,33 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
     return '';
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     const file = files[0];
-    const newDoc = {
-      docId: `doc_${Date.now()}`,
-      filename: file.name,
-      uploadedAt: new Date().toISOString().split('T')[0],
-      size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
-      status: 'Pending' as const,
-    };
-    setUploadedDocs(prev => [...prev, newDoc]);
+    try {
+      const res = await uploadDocumentFile(file);
+      const newDoc = {
+        docId: res.doc_id,
+        filename: res.filename,
+        uploadedAt: new Date().toISOString().split('T')[0],
+        size: res.size,
+        status: 'Verified' as const,
+      };
+      setUploadedDocs(prev => [...prev, newDoc]);
+      if (res.extracted_tin) {
+        setTin(res.extracted_tin);
+      }
+    } catch {
+      const newDoc = {
+        docId: `doc_${Date.now()}`,
+        filename: file.name,
+        uploadedAt: new Date().toISOString().split('T')[0],
+        size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
+        status: 'Pending' as const,
+      };
+      setUploadedDocs(prev => [...prev, newDoc]);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
