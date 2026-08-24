@@ -1218,7 +1218,9 @@ def update_user_profile(
 # =====================================================
 
 def send_smtp_email(to_email: str, subject: str, body_text: str, otp_code: str = ""):
-    """Dispatches real email via SMTP or macOS sendmail, and logs to terminal console."""
+    """Dispatches real email via Resend API, Brevo API, SMTP, or macOS sendmail."""
+    resend_key = os.getenv("RESEND_API_KEY")
+    brevo_key = os.getenv("BREVO_API_KEY")
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
@@ -1229,7 +1231,61 @@ def send_smtp_email(to_email: str, subject: str, body_text: str, otp_code: str =
     print(f"👉 6-DIGIT CODE: {otp_code}")
     print(f"==========================================================\n")
 
-    # 1. Try Authenticated SMTP if configured in backend/.env
+    # 1. Try Resend API if RESEND_API_KEY is configured
+    if resend_key:
+        try:
+            import json
+            import urllib.request
+            req_data = json.dumps({
+                "from": "TaxEaseBD Verification <onboarding@resend.dev>",
+                "to": [to_email],
+                "subject": subject,
+                "text": body_text,
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.resend.com/emails",
+                data=req_data,
+                headers={
+                    "Authorization": f"Bearer {resend_key}",
+                    "Content-Type": "application/json",
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status in (200, 201):
+                    print(f"✅ [Resend API Email Sent] Delivered code directly to inbox of {to_email}")
+                    return
+        except Exception as e:
+            print(f"⚠️ [Resend API Dispatch Error] {e}")
+
+    # 2. Try Brevo (Sendinblue) API if BREVO_API_KEY is configured
+    if brevo_key:
+        try:
+            import json
+            import urllib.request
+            req_data = json.dumps({
+                "sender": {"name": "TaxEaseBD Verification", "email": "noreply@taxeasebd.app"},
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "textContent": body_text,
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "https://api.brevo.com/v3/smtp/email",
+                data=req_data,
+                headers={
+                    "api-key": brevo_key,
+                    "Content-Type": "application/json",
+                },
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                if resp.status in (200, 201):
+                    print(f"✅ [Brevo API Email Sent] Delivered code directly to inbox of {to_email}")
+                    return
+        except Exception as e:
+            print(f"⚠️ [Brevo API Dispatch Error] {e}")
+
+    # 3. Try Authenticated SMTP if configured in backend/.env
     if smtp_user and smtp_pass:
         try:
             import smtplib
@@ -1248,7 +1304,7 @@ def send_smtp_email(to_email: str, subject: str, body_text: str, otp_code: str =
         except Exception as e:
             print(f"⚠️ [SMTP Dispatch Warning] SMTP error: {e}")
 
-    # 2. Try macOS local sendmail binary fallback
+    # 4. Try macOS local sendmail binary fallback
     import subprocess
     try:
         raw_msg = f"Subject: {subject}\nTo: {to_email}\nFrom: TaxEaseBD <noreply@taxeasebd.app>\nContent-Type: text/plain; charset=UTF-8\n\n{body_text}"
