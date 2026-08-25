@@ -3,11 +3,10 @@
 import React, { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { apiFetch } from '@/lib/api';
-import { 
-  ShieldCheck, 
-  AlertTriangle, 
-  TrendingUp, 
-  Calculator, 
+import {
+  ShieldCheck,
+  AlertTriangle,
+  Calculator,
   FileText, 
   Receipt, 
   Bot, 
@@ -18,13 +17,50 @@ import {
   ArrowRight
 } from 'lucide-react';
 
+interface DashboardDeadline {
+  title_en: string;
+  title_bn: string;
+  due_date: string;
+  status: string;
+}
+
+interface DashboardSummary {
+  logged_in: boolean;
+  profile_completeness_percent: number;
+  registered_entity_type: string | null;
+  saved_calculations_count: number;
+  last_calculation: { entity_type: string; liability: number } | null;
+  upcoming_deadlines: DashboardDeadline[];
+}
+
 interface DashboardProps {
   setActiveTab: (tab: string) => void;
 }
 
+// Real day-count from today to a "YYYY-MM-DD" due date - replaces the
+// hardcoded "15 days left" / "122 days left" that never actually changed.
+function daysUntil(dueDate: string): number {
+  const due = new Date(dueDate + 'T00:00:00');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function entityTypeLabel(entityType: string | null, language: string): string {
+  if (!entityType) return language === 'bn' ? 'নিবন্ধিত নয়' : 'Not registered yet';
+  const labels: Record<string, { en: string; bn: string }> = {
+    individual: { en: 'Individual', bn: 'ব্যক্তিগত করদাতা' },
+    sole_proprietorship: { en: 'Sole Proprietorship', bn: 'একক মালিকানা প্রতিষ্ঠান' },
+    partnership: { en: 'Partnership', bn: 'পার্টনারশিপ প্রতিষ্ঠান' },
+    private_limited_company: { en: 'Private Limited Company', bn: 'প্রাইভেট লিমিটেড কোম্পানি' },
+  };
+  const label = labels[entityType];
+  return label ? (language === 'bn' ? label.bn : label.en) : entityType;
+}
+
 export default function DashboardView({ setActiveTab }: DashboardProps) {
   const { t, language } = useLanguage();
-  const [summary, setSummary] = useState<any>(null);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
 
   useEffect(() => {
     apiFetch('/api/dashboard/summary')
@@ -32,6 +68,11 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
       .then((data) => setSummary(data))
       .catch(() => {});
   }, []);
+
+  const completeness = summary?.profile_completeness_percent ?? 0;
+  const calcCount = summary?.saved_calculations_count ?? 0;
+  const entityLabel = entityTypeLabel(summary?.registered_entity_type ?? null, language);
+  const deadlines = summary?.upcoming_deadlines ?? [];
 
 
   return (
@@ -73,9 +114,9 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
         </div>
       </div>
 
-      {/* Metrics Row: Compliance Score & Audit Risk */}
+      {/* Metrics Row: real signals from your account, not sample data */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Compliance Health Score */}
+        {/* Profile Completeness - computed from how many profile fields are actually filled in */}
         <div className="glass-card p-6 rounded-2xl border border-slate-700/60 relative">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -86,22 +127,22 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
             </div>
           </div>
           <div className="mt-4 flex items-baseline space-x-3">
-            <span className="text-4xl font-extrabold text-emerald-400">92 / 100</span>
+            <span className="text-4xl font-extrabold text-emerald-400">{completeness}%</span>
             <span className="text-xs font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-              {t.dashboard.scoreStatus}
+              {completeness >= 100 ? t.dashboard.scoreStatus : t.dashboard.scoreStatusIncomplete}
             </span>
           </div>
           <div className="mt-3 w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-            <div className="bg-emerald-500 h-full rounded-full" style={{ width: '92%' }} />
+            <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${completeness}%` }} />
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            {language === 'bn' 
-              ? 'ট্রেড লাইসেন্স ও ই-টিন আপডেট রয়েছে। আগামী ভ্যাট রিটার্ন ১৫ই আগস্ট।' 
-              : 'Trade License & E-TIN updated. Next VAT return due Aug 15.'}
+            {summary?.logged_in
+              ? (language === 'bn' ? 'নাম, TIN, NID, ফোন, ঠিকানা ও ট্যাক্স জোন পূরণের ভিত্তিতে।' : 'Based on name, TIN, NID, phone, address & tax zone filled in.')
+              : (language === 'bn' ? 'লগ ইন করলে আপনার প্রোফাইল সম্পূর্ণতা দেখা যাবে।' : 'Log in to see your profile completeness.')}
           </p>
         </div>
 
-        {/* Predicted Audit Risk */}
+        {/* Saved Calculations - a real count, not a fabricated "audit risk" score */}
         <div className="glass-card p-6 rounded-2xl border border-slate-700/60">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -112,22 +153,21 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
             </div>
           </div>
           <div className="mt-4 flex items-baseline space-x-3">
-            <span className="text-4xl font-extrabold text-amber-400">8.5%</span>
+            <span className="text-4xl font-extrabold text-amber-400">{calcCount}</span>
             <span className="text-xs font-medium text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20">
               {t.dashboard.riskLow}
             </span>
           </div>
-          <div className="mt-3 w-full bg-slate-800 h-2 rounded-full overflow-hidden">
-            <div className="bg-amber-500 h-full rounded-full" style={{ width: '8.5%' }} />
-          </div>
           <p className="mt-3 text-xs text-slate-500">
-            {language === 'bn' 
-              ? 'মুসক ৬.৩ লেজারের সাথে ব্যাংক স্টেটমেন্ট সামঞ্জস্যপূর্ণ।' 
-              : 'Mushak 6.3 ledger matches turnover statements.'}
+            {summary?.last_calculation
+              ? (language === 'bn'
+                  ? `সর্বশেষ: ${entityTypeLabel(summary.last_calculation.entity_type, language)}, আনুমানিক দায় ৳${Math.round(summary.last_calculation.liability).toLocaleString('en-IN')}`
+                  : `Last: ${entityTypeLabel(summary.last_calculation.entity_type, language)}, est. liability ৳${Math.round(summary.last_calculation.liability).toLocaleString('en-IN')}`)
+              : (language === 'bn' ? 'এখনও কোনো হিসাব সংরক্ষিত হয়নি।' : 'No calculations saved yet.')}
           </p>
         </div>
 
-        {/* Registered Entity Type */}
+        {/* Registered Entity Type - your real entity_type, no fabricated RJSC number */}
         <div className="glass-card p-6 rounded-2xl border border-slate-700/60">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -138,9 +178,9 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
             </div>
           </div>
           <div className="mt-4">
-            <span className="text-xl font-bold text-slate-900">Private Limited Company</span>
+            <span className="text-xl font-bold text-slate-900">{entityLabel}</span>
             <p className="text-xs text-slate-500 mt-1">
-              {language === 'bn' ? 'আরজেএসসি নিবন্ধন নং: C-189204' : 'RJSC Reg No: C-189204'}
+              {language === 'bn' ? 'প্রোফাইলে পরিবর্তনযোগ্য' : 'Editable from your profile'}
             </p>
           </div>
           <button
@@ -253,54 +293,47 @@ export default function DashboardView({ setActiveTab }: DashboardProps) {
             </div>
 
             <div className="space-y-4">
-              {/* Deadline Item 1 */}
-              <div className="p-3.5 rounded-xl bg-slate-100 border border-amber-500/40 flex items-center justify-between">
-                <div className="space-y-1">
-                  <span className="text-xs font-bold text-black block">
-                    {t.calendar.vatDeadlineTitle}
-                  </span>
-                  <div className="flex items-center space-x-1.5 text-[11px] text-amber-700 font-semibold">
-                    <Clock className="w-3 h-3 text-amber-600" />
-                    <span>August 15, 2026</span>
+              {deadlines.length === 0 && (
+                <p className="text-xs text-slate-500">
+                  {language === 'bn' ? 'কোনো আসন্ন সময়সীমা পাওয়া যায়নি।' : 'No upcoming deadlines found.'}
+                </p>
+              )}
+              {deadlines.map((d, i) => {
+                const days = daysUntil(d.due_date);
+                const tone = d.status === 'urgent' ? 'amber' : d.status === 'valid' ? 'emerald' : 'slate';
+                const Icon = d.status === 'valid' ? CheckCircle2 : Clock;
+                return (
+                  <div
+                    key={i}
+                    className={`p-3.5 rounded-xl bg-slate-100 border flex items-center justify-between ${
+                      tone === 'amber' ? 'border-amber-500/40' : tone === 'emerald' ? 'border-emerald-500/40' : 'border-slate-300'
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold text-black block">
+                        {language === 'bn' ? d.title_bn : d.title_en}
+                      </span>
+                      <div
+                        className={`flex items-center space-x-1.5 text-[11px] font-semibold ${
+                          tone === 'amber' ? 'text-amber-700' : tone === 'emerald' ? 'text-emerald-700' : 'text-slate-700'
+                        }`}
+                      >
+                        <Icon className={`w-3 h-3 ${tone === 'amber' ? 'text-amber-600' : tone === 'emerald' ? 'text-emerald-600' : 'text-slate-600'}`} />
+                        <span>{d.due_date}</span>
+                      </div>
+                    </div>
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold border ${
+                        tone === 'amber' ? 'bg-amber-500/20 text-amber-800 border-amber-500/40'
+                          : tone === 'emerald' ? 'bg-emerald-500/20 text-emerald-800 border-emerald-500/40'
+                          : 'bg-slate-200 text-slate-800 border-slate-300'
+                      }`}
+                    >
+                      {days >= 0 ? `${days} ${t.dashboard.deadlineDaysLeft}` : (language === 'bn' ? 'মেয়াদোত্তীর্ণ' : 'Overdue')}
+                    </span>
                   </div>
-                </div>
-                <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-800 text-xs font-bold border border-amber-500/40">
-                  15 {t.dashboard.deadlineDaysLeft}
-                </span>
-              </div>
-
-              {/* Deadline Item 2 */}
-              <div className="p-3.5 rounded-xl bg-slate-100 border border-emerald-500/40 flex items-center justify-between">
-                <div className="space-y-1">
-                  <span className="text-xs font-bold text-black block">
-                    {t.calendar.tradeDeadlineTitle}
-                  </span>
-                  <div className="flex items-center space-x-1.5 text-[11px] text-emerald-700 font-semibold">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                    <span>June 30, 2027</span>
-                  </div>
-                </div>
-                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-800 text-xs font-bold border border-emerald-500/40">
-                  OK
-                </span>
-              </div>
-
-              {/* Deadline Item 3 */}
-              <div className="p-3.5 rounded-xl bg-slate-100 border border-slate-300 flex items-center justify-between">
-                <div className="space-y-1">
-                  <span className="text-xs font-bold text-black block">
-                    {t.calendar.taxDeadlineTitle}
-                  </span>
-                  <div className="flex items-center space-x-1.5 text-[11px] text-slate-700 font-semibold">
-                    <Clock className="w-3 h-3 text-slate-600" />
-                    <span>November 30, 2026</span>
-                  </div>
-                </div>
-                <span className="px-2.5 py-1 rounded-lg bg-slate-200 text-slate-800 text-xs font-bold border border-slate-300">
-                  122 {t.dashboard.deadlineDaysLeft}
-                </span>
-              </div>
-
+                );
+              })}
             </div>
           </div>
         </div>

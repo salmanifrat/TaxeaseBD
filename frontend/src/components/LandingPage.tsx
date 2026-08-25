@@ -183,13 +183,6 @@ export default function LandingPage({ onEnterApp, onGoLogin, onGoSignup, isLogge
     { icon: '🧾', title: 'Mushak Ledger', desc: 'Mushak 6.3 & 9.1 VAT ledger generation made easy', view: 'mushak' },
   ];
 
-  const stats = [
-    { value: '50K+', label: 'Businesses Served' },
-    { value: '৳2.4B+', label: 'Tax Calculated' },
-    { value: '99.8%', label: 'Accuracy Rate' },
-    { value: '24/7', label: 'AI Support' },
-  ];
-
   const navItems = [
     { label: 'Calculator', view: 'calculator' },
     { label: 'AI Assistant', view: 'assistant' },
@@ -465,18 +458,6 @@ export default function LandingPage({ onEnterApp, onGoLogin, onGoSignup, isLogge
           </div>
         </section>
       )}
-
-      {/* ── STATS BAR ── */}
-      <section style={{ background: '#FFFFFF', borderTop: '1px solid #D1E8E2', borderBottom: '1px solid #D1E8E2', padding: '40px 2rem' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 24 }}>
-          {stats.map((s, i) => (
-            <div key={i} style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 34, fontWeight: 900, color: '#0077B3', letterSpacing: '-1px' }}>{s.value}</div>
-              <div style={{ fontSize: 13, color: '#2E5369', fontWeight: 500, marginTop: 4 }}>{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
 
       {/* ── FEATURES ── */}
       <section style={{ padding: '90px 2rem', background: '#F0F8FF' }}>

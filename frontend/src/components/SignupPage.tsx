@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { apiFetch, apiErrorMessage, saveSession, UserProfile } from '@/lib/api';
+import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 interface SignupPageProps {
   onSignup: (user: UserProfile) => void;
@@ -9,7 +10,13 @@ interface SignupPageProps {
   onGoHome: () => void;
 }
 
+// Once the code is emailed, "Resend code" is disabled for this long so a
+// signup form can't be used to spam an inbox.
+const RESEND_COOLDOWN_SECONDS = 45;
+
 export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPageProps) {
+  const [step, setStep] = useState<'details' | 'verify'>('details');
+
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,6 +24,19 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPass, setShowPass] = useState(false);
+
+  const [code, setCode] = useState('');
+  const [verifyError, setVerifyError] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [infoMessage, setInfoMessage] = useState('');
+  const [devCode, setDevCode] = useState<string | null>(null);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => setResendCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   const validate = () => {
     if (!name.trim()) return 'Please enter your full name.';
@@ -26,19 +46,87 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
     return '';
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const err = validate();
-    if (err) { setError(err); return; }
+  // Step 1: send the 6-digit code instead of creating the account directly.
+  const requestCode = async () => {
     setError('');
+    setInfoMessage('');
+    setDevCode(null);
     setLoading(true);
     try {
-      const res = await apiFetch('/api/auth/signup', {
+      const res = await apiFetch('/api/auth/signup/request-code', {
         method: 'POST',
         body: JSON.stringify({ email: email.trim(), password, name: name.trim() }),
       });
       if (!res.ok) {
-        setError(await apiErrorMessage(res, 'Could not create your account.'));
+        setError(await apiErrorMessage(res, 'Could not send a verification code.'));
+        return;
+      }
+      const data = await res.json();
+      setInfoMessage(data.message || `We emailed a 6-digit code to ${email.trim()}.`);
+      setDevCode(data.dev_code || null);
+      setCode('');
+      setVerifyError('');
+      setStep('verify');
+      setResendCooldown(RESEND_COOLDOWN_SECONDS);
+    } catch {
+      setError('Could not reach the TaxEaseBD server. Is the backend running on port 8000?');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const err = validate();
+    if (err) { setError(err); return; }
+    await requestCode();
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0 || loading) return;
+    await requestCode();
+  };
+
+  // Step 2: confirm the code, which is what actually creates the account.
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (code.trim().length < 4) {
+      setVerifyError('Enter the code from your email.');
+      return;
+    }
+    setVerifyError('');
+    setVerifying(true);
+    try {
+      const res = await apiFetch('/api/auth/signup/verify-code', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+      });
+      if (!res.ok) {
+        setVerifyError(await apiErrorMessage(res, 'Incorrect or expired code.'));
+        return;
+      }
+      const data = await res.json();
+      saveSession({ token: data.token, user: data.user });
+      onSignup(data.user as UserProfile);
+    } catch {
+      setVerifyError('Could not reach the TaxEaseBD server. Is the backend running on port 8000?');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // "Continue with Google" skips the emailed code entirely - Google has
+  // already verified the account's email address.
+  const handleGoogleCredential = async (credential: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/auth/google', {
+        method: 'POST',
+        body: JSON.stringify({ credential }),
+      });
+      if (!res.ok) {
+        setError(await apiErrorMessage(res, 'Google sign-up failed.'));
         return;
       }
       const data = await res.json();
@@ -118,140 +206,221 @@ export default function SignupPage({ onSignup, onGoLogin, onGoHome }: SignupPage
         <div style={{ width: '100%', maxWidth: 420 }}>
 
           <button
-            onClick={onGoHome}
+            onClick={step === 'verify' ? () => setStep('details') : onGoHome}
             style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, color: '#5B7D91', fontSize: 13, fontWeight: 500, marginBottom: 32, padding: 0 }}
           >
-            ← Back to home
+            ← {step === 'verify' ? 'Back' : 'Back to home'}
           </button>
 
-          <h1 style={{ fontSize: 28, fontWeight: 900, color: '#0D2233', marginBottom: 6, letterSpacing: '-0.5px' }}>Create your account</h1>
-          <p style={{ fontSize: 14, color: '#5B7D91', marginBottom: 28 }}>
-            Free to join. No credit card required.
-          </p>
+          {step === 'details' ? (
+            <>
+              <h1 style={{ fontSize: 28, fontWeight: 900, color: '#0D2233', marginBottom: 6, letterSpacing: '-0.5px' }}>Create your account</h1>
+              <p style={{ fontSize: 14, color: '#5B7D91', marginBottom: 28 }}>
+                Free to join. No credit card required.
+              </p>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-            {/* Name */}
-            <div>
-              <label style={labelStyle}>Full name</label>
-              <input
-                id="signup-name"
-                type="text"
-                placeholder="e.g. Rahim Uddin"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                className="glass-input"
-                style={{ marginTop: 6 }}
-                autoComplete="name"
-              />
-            </div>
-
-            {/* Email */}
-            <div>
-              <label style={labelStyle}>Email address</label>
-              <input
-                id="signup-email"
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="glass-input"
-                style={{ marginTop: 6 }}
-                autoComplete="email"
-              />
-            </div>
-
-            {/* Password */}
-            <div>
-              <label style={labelStyle}>Password</label>
-              <div style={{ position: 'relative', marginTop: 6 }}>
-                <input
-                  id="signup-password"
-                  type={showPass ? 'text' : 'password'}
-                  placeholder="Min. 6 characters"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  className="glass-input"
-                  autoComplete="new-password"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(p => !p)}
-                  style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#5B7D91', fontSize: 12 }}
-                >
-                  {showPass ? 'Hide' : 'Show'}
-                </button>
+              <div style={{ marginBottom: 20 }}>
+                <GoogleSignInButton onCredential={handleGoogleCredential} text="signup_with" />
               </div>
-              {/* Strength bar */}
-              {password.length > 0 && (
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ height: 4, borderRadius: 4, background: '#D1E8E2', overflow: 'hidden' }}>
-                    <div style={{ height: '100%', width: `${strength.width}%`, background: strength.color, borderRadius: 4, transition: 'all 0.3s' }} />
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0 20px' }}>
+                <div style={{ flex: 1, height: 1, background: '#D1E8E2' }} />
+                <span style={{ fontSize: 12, color: '#5B7D91' }}>or sign up with email</span>
+                <div style={{ flex: 1, height: 1, background: '#D1E8E2' }} />
+              </div>
+
+              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                {/* Name */}
+                <div>
+                  <label style={labelStyle}>Full name</label>
+                  <input
+                    id="signup-name"
+                    type="text"
+                    placeholder="e.g. Rahim Uddin"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="glass-input"
+                    style={{ marginTop: 6 }}
+                    autoComplete="name"
+                  />
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label style={labelStyle}>Email address</label>
+                  <input
+                    id="signup-email"
+                    type="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    className="glass-input"
+                    style={{ marginTop: 6 }}
+                    autoComplete="email"
+                  />
+                </div>
+
+                {/* Password */}
+                <div>
+                  <label style={labelStyle}>Password</label>
+                  <div style={{ position: 'relative', marginTop: 6 }}>
+                    <input
+                      id="signup-password"
+                      type={showPass ? 'text' : 'password'}
+                      placeholder="Min. 6 characters"
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      className="glass-input"
+                      autoComplete="new-password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass(p => !p)}
+                      style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#5B7D91', fontSize: 12 }}
+                    >
+                      {showPass ? 'Hide' : 'Show'}
+                    </button>
                   </div>
-                  <span style={{ fontSize: 11, color: strength.color, fontWeight: 600, marginTop: 4, display: 'block' }}>{strength.label}</span>
+                  {/* Strength bar */}
+                  {password.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ height: 4, borderRadius: 4, background: '#D1E8E2', overflow: 'hidden' }}>
+                        <div style={{ height: '100%', width: `${strength.width}%`, background: strength.color, borderRadius: 4, transition: 'all 0.3s' }} />
+                      </div>
+                      <span style={{ fontSize: 11, color: strength.color, fontWeight: 600, marginTop: 4, display: 'block' }}>{strength.label}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Confirm password */}
+                <div>
+                  <label style={labelStyle}>Confirm password</label>
+                  <input
+                    id="signup-confirm"
+                    type={showPass ? 'text' : 'password'}
+                    placeholder="Re-enter password"
+                    value={confirm}
+                    onChange={e => setConfirm(e.target.value)}
+                    className="glass-input"
+                    style={{ marginTop: 6, borderColor: confirm && confirm !== password ? '#E05C2E' : undefined }}
+                    autoComplete="new-password"
+                  />
+                  {confirm && confirm !== password && (
+                    <span style={{ fontSize: 11, color: '#E05C2E', fontWeight: 600, display: 'block', marginTop: 4 }}>Passwords don&apos;t match</span>
+                  )}
+                </div>
+
+                {/* Error */}
+                {error && (
+                  <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(224,92,46,0.08)', border: '1px solid rgba(224,92,46,0.3)', color: '#E05C2E', fontSize: 13, fontWeight: 500 }}>
+                    {error}
+                  </div>
+                )}
+
+                {/* Submit */}
+                <button
+                  id="signup-submit"
+                  type="submit"
+                  disabled={loading}
+                  style={{
+                    background: loading ? '#6ba8c4' : 'linear-gradient(135deg, #1AABA8 0%, #0077B3 100%)',
+                    color: '#fff', border: 'none',
+                    borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 700,
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s', marginTop: 4,
+                    boxShadow: '0 4px 18px rgba(0,119,179,0.25)',
+                  }}
+                  onMouseOver={e => { if (!loading) e.currentTarget.style.opacity = '0.9'; }}
+                  onMouseOut={e => { e.currentTarget.style.opacity = '1'; }}
+                >
+                  {loading ? 'Sending code…' : 'Send Verification Code →'}
+                </button>
+
+                <p style={{ fontSize: 11, color: '#5B7D91', textAlign: 'center', marginTop: 4, lineHeight: 1.5 }}>
+                  By creating an account, you agree to our Terms of Service and Privacy Policy.
+                </p>
+              </form>
+
+              {/* Switch to login */}
+              <p style={{ textAlign: 'center', fontSize: 14, color: '#5B7D91', marginTop: 24 }}>
+                Already have an account?{' '}
+                <button
+                  onClick={onGoLogin}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0077B3', fontWeight: 700, fontSize: 14, padding: 0 }}
+                >
+                  Log In
+                </button>
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 style={{ fontSize: 28, fontWeight: 900, color: '#0D2233', marginBottom: 6, letterSpacing: '-0.5px' }}>Check your email</h1>
+              <p style={{ fontSize: 14, color: '#5B7D91', marginBottom: 24, lineHeight: 1.5 }}>
+                {infoMessage || <>We sent a 6-digit verification code to <strong>{email.trim()}</strong>.</>}
+              </p>
+
+              {devCode && (
+                <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(245,166,35,0.1)', border: '1px solid rgba(245,166,35,0.35)', color: '#8a5a00', fontSize: 12.5, fontWeight: 500, marginBottom: 20, lineHeight: 1.5 }}>
+                  Dev mode — no email server configured. Your code is <strong style={{ fontFamily: 'monospace', fontSize: 14 }}>{devCode}</strong>.
                 </div>
               )}
-            </div>
 
-            {/* Confirm password */}
-            <div>
-              <label style={labelStyle}>Confirm password</label>
-              <input
-                id="signup-confirm"
-                type={showPass ? 'text' : 'password'}
-                placeholder="Re-enter password"
-                value={confirm}
-                onChange={e => setConfirm(e.target.value)}
-                className="glass-input"
-                style={{ marginTop: 6, borderColor: confirm && confirm !== password ? '#E05C2E' : undefined }}
-                autoComplete="new-password"
-              />
-              {confirm && confirm !== password && (
-                <span style={{ fontSize: 11, color: '#E05C2E', fontWeight: 600, display: 'block', marginTop: 4 }}>Passwords don&apos;t match</span>
-              )}
-            </div>
+              <form onSubmit={handleVerify} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div>
+                  <label style={labelStyle}>6-digit code</label>
+                  <input
+                    id="signup-verify-code"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="000000"
+                    value={code}
+                    onChange={e => setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6))}
+                    className="glass-input"
+                    style={{ marginTop: 6, letterSpacing: 8, fontSize: 20, fontWeight: 700, textAlign: 'center' }}
+                    autoComplete="one-time-code"
+                    autoFocus
+                  />
+                </div>
 
-            {/* Error */}
-            {error && (
-              <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(224,92,46,0.08)', border: '1px solid rgba(224,92,46,0.3)', color: '#E05C2E', fontSize: 13, fontWeight: 500 }}>
-                {error}
-              </div>
-            )}
+                {verifyError && (
+                  <div style={{ padding: '10px 14px', borderRadius: 8, background: 'rgba(224,92,46,0.08)', border: '1px solid rgba(224,92,46,0.3)', color: '#E05C2E', fontSize: 13, fontWeight: 500 }}>
+                    {verifyError}
+                  </div>
+                )}
 
-            {/* Submit */}
-            <button
-              id="signup-submit"
-              type="submit"
-              disabled={loading}
-              style={{
-                background: loading ? '#6ba8c4' : 'linear-gradient(135deg, #1AABA8 0%, #0077B3 100%)',
-                color: '#fff', border: 'none',
-                borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 700,
-                cursor: loading ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s', marginTop: 4,
-                boxShadow: '0 4px 18px rgba(0,119,179,0.25)',
-              }}
-              onMouseOver={e => { if (!loading) e.currentTarget.style.opacity = '0.9'; }}
-              onMouseOut={e => { e.currentTarget.style.opacity = '1'; }}
-            >
-              {loading ? 'Creating account…' : 'Create Account →'}
-            </button>
+                <button
+                  id="signup-verify-submit"
+                  type="submit"
+                  disabled={verifying}
+                  style={{
+                    background: verifying ? '#6ba8c4' : 'linear-gradient(135deg, #1AABA8 0%, #0077B3 100%)',
+                    color: '#fff', border: 'none',
+                    borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 700,
+                    cursor: verifying ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s', marginTop: 4,
+                    boxShadow: '0 4px 18px rgba(0,119,179,0.25)',
+                  }}
+                >
+                  {verifying ? 'Verifying…' : 'Verify & Create Account →'}
+                </button>
 
-            <p style={{ fontSize: 11, color: '#5B7D91', textAlign: 'center', marginTop: 4, lineHeight: 1.5 }}>
-              By creating an account, you agree to our Terms of Service and Privacy Policy.
-            </p>
-          </form>
-
-          {/* Switch to login */}
-          <p style={{ textAlign: 'center', fontSize: 14, color: '#5B7D91', marginTop: 24 }}>
-            Already have an account?{' '}
-            <button
-              onClick={onGoLogin}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#0077B3', fontWeight: 700, fontSize: 14, padding: 0 }}
-            >
-              Log In
-            </button>
-          </p>
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={resendCooldown > 0 || loading}
+                  style={{
+                    background: 'none', border: 'none',
+                    color: resendCooldown > 0 ? '#A3D1E0' : '#0077B3',
+                    fontSize: 13, fontWeight: 600, textAlign: 'center',
+                    cursor: resendCooldown > 0 ? 'not-allowed' : 'pointer', padding: 4,
+                  }}
+                >
+                  {resendCooldown > 0 ? `Resend code in ${resendCooldown}s` : "Didn't get a code? Resend"}
+                </button>
+              </form>
+            </>
+          )}
         </div>
       </div>
     </div>

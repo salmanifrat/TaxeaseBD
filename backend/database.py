@@ -1,6 +1,5 @@
 import os
-import sys
-from sqlalchemy import create_engine, text
+from sqlalchemy import String, create_engine, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -10,125 +9,120 @@ DEFAULT_MYSQL_URL = "mysql+pymysql://root:@localhost:3306/taxeasebd?charset=utf8
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_MYSQL_URL)
 
 
-def sync_income_tax_laws(app_engine):
+def _sync_reference_table(app_engine, model_cls, rows, defaults=None):
     """
-    Authoritatively syncs the `income_tax_laws` table from
-    data/income_tax_laws.py - the single hardcoded source of truth (50 real
-    sections of the Income Tax Act, 2023).
-
-    This deletes and re-inserts every row on every backend startup, rather
-    than "seed only if the table is empty". That's deliberate: an
-    if-empty check can never remove old/dummy rows once they've been
-    written once, so a database seeded before this dataset existed would
-    keep stale placeholder laws forever. A full sync guarantees the table
-    always matches the hardcoded file - editing that file and restarting
-    the backend is the only way to change what's in the database, and no
-    dummy data can survive a restart.
-
-    Uses the SQLAlchemy ORM (not raw SQL string execution) so there's no
-    risk of a semicolon or quote inside a law's text breaking a naive
-    SQL statement split.
+    Authoritatively syncs a reference table (drop table, recreate with the
+    current model schema, insert the given rows) instead of "seed only if
+    empty". An if-empty check can never fix rows that are already wrong
+    or a column that models.py added after the table existed - a full
+    sync guarantees the table always matches the hardcoded Python source.
+    Only used for our own reference data (income tax laws, compliance
+    deadlines), never for user data.
     """
-    from data.income_tax_laws import INCOME_TAX_LAWS
-    import models
+    model_cls.__table__.drop(app_engine, checkfirst=True)
+    model_cls.__table__.create(app_engine, checkfirst=True)
 
     Session = sessionmaker(bind=app_engine)
     session = Session()
     try:
-        laws_data = []
-        for item in INCOME_TAX_LAWS:
+        data = []
+        for item in rows:
             row = dict(item)
-            if 'source_url' not in row:
-                row['source_url'] = 'https://nbr.gov.bd/uploads/acts/Income_tax_act_2023.pdf'
-            laws_data.append(row)
-        session.bulk_insert_mappings(models.IncomeTaxLaw, laws_data)
+            for key, value in (defaults or {}).items():
+                row.setdefault(key, value)
+            data.append(row)
+        session.bulk_insert_mappings(model_cls, data)
         session.commit()
-        print(f"✓ Synced {len(INCOME_TAX_LAWS)} Income Tax Act, 2023 sections into income_tax_laws.")
+        print(f"✓ Synced {len(data)} rows into {model_cls.__tablename__}.")
     except Exception as e:
         session.rollback()
-        print(f"⚠️ Income tax law sync failed: {e}")
+        print(f"⚠️ Sync failed for {model_cls.__tablename__}: {e}")
     finally:
         session.close()
 
 
-def seed_compliance_deadlines(app_engine):
-    """Seeds compliance_deadlines from income_tax_laws_nbr.sql, only if empty.
+def sync_income_tax_laws(app_engine):
+    from data.income_tax_laws import INCOME_TAX_LAWS
+    import models
+    _sync_reference_table(
+        app_engine, models.IncomeTaxLaw, INCOME_TAX_LAWS,
+        defaults={"source_url": "https://nbr.gov.bd/uploads/acts/Income_tax_act_2023.pdf"},
+    )
 
-    Unlike the law dataset, these are just calendar demo rows (not something
-    users complained about being 'dummy'), so a one-time seed is fine here.
+
+def sync_compliance_deadlines(app_engine):
+    from data.compliance_deadlines import COMPLIANCE_DEADLINES
+    import models
+    _sync_reference_table(app_engine, models.ComplianceDeadline, COMPLIANCE_DEADLINES)
+
+
+def _auto_migrate_columns(app_engine):
     """
-    sql_path = os.path.join(os.path.dirname(__file__), "income_tax_laws_nbr.sql")
-    if not os.path.exists(sql_path):
-        return
+    Adds any column a model has that the live table is missing (e.g. new
+    User fields added after a `users` table already existed in a real
+    database - Base.metadata.create_all() only creates missing tables, it
+    never alters an existing one). Only ever ADDS nullable columns, so
+    this can't lose data. Safe on every startup.
+    """
+    import models
 
-    try:
-        with app_engine.connect() as conn:
-            has_deadlines = False
-            try:
-                res = conn.execute(text("SELECT COUNT(*) FROM compliance_deadlines;"))
-                count = res.scalar()
-                if count and count > 0:
-                    has_deadlines = True
-            except Exception:
-                has_deadlines = False
+    inspector = inspect(app_engine)
+    existing_tables = set(inspector.get_table_names())
 
-            if not has_deadlines:
-                with open(sql_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-
-                # Only pull the compliance_deadlines INSERT statement out of the
-                # file - income_tax_laws is handled by sync_income_tax_laws() above.
-                marker = "INSERT INTO `compliance_deadlines`"
-                if marker in content:
-                    start = content.index(marker)
-                    end = content.index(";", start) + 1
-                    stmt = content[start:end]
-                    with app_engine.begin() as trans_conn:
-                        trans_conn.execute(text(stmt))
-                    print("✓ Compliance deadlines seeded.")
-    except Exception as e:
-        print(f"⚠️ Compliance deadline seeding note: {e}")
-
-
-
+    with app_engine.begin() as conn:
+        for table_name, table in models.Base.metadata.tables.items():
+            if table_name not in existing_tables:
+                continue
+            existing_columns = {c["name"] for c in inspector.get_columns(table_name)}
+            for column in table.columns:
+                if column.name in existing_columns:
+                    continue
+                try:
+                    col_type = column.type.compile(dialect=app_engine.dialect)
+                except Exception:
+                    # MySQL requires a length on VARCHAR; some models use
+                    # unbounded String(), which SQLite tolerates but MySQL doesn't.
+                    col_type = "VARCHAR(255)" if isinstance(column.type, String) else "TEXT"
+                try:
+                    conn.execute(text(f'ALTER TABLE `{table_name}` ADD COLUMN `{column.name}` {col_type}'))
+                    print(f"✓ Added missing column {table_name}.{column.name}")
+                except Exception as e:
+                    print(f"⚠️ Could not add column {table_name}.{column.name}: {e}")
 
 
 Base = declarative_base()
 
+
 def init_xampp_mysql():
-
-
-    """Initializes XAMPP MySQL database 'taxeasebd' and populates income tax laws if needed."""
+    """Connects to the local XAMPP MySQL instance, creating the database if
+    needed; falls back to SQLite if MySQL isn't reachable."""
     app_engine = None
     try:
         if "mysql" in SQLALCHEMY_DATABASE_URL:
-            # 1. Connect to MySQL server without database to ensure database exists
             base_url = SQLALCHEMY_DATABASE_URL.rsplit('/', 1)[0]
             server_engine = create_engine(base_url, isolation_level="AUTOCOMMIT")
             with server_engine.connect() as conn:
                 conn.execute(text("CREATE DATABASE IF NOT EXISTS `taxeasebd` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"))
             server_engine.dispose()
             print("✓ XAMPP MySQL database 'taxeasebd' verified/created.")
-
             app_engine = create_engine(SQLALCHEMY_DATABASE_URL)
     except Exception as e:
-        print(f"⚠️ XAMPP MySQL Connection Warning: {e}")
-        print("Falling back to local SQLite engine to ensure system operation.")
+        print(f"⚠️ XAMPP MySQL connection failed, falling back to SQLite: {e}")
 
     if app_engine is None:
-        fallback_url = "sqlite:///./taxease.db"
-        app_engine = create_engine(fallback_url, connect_args={"check_same_thread": False})
+        app_engine = create_engine("sqlite:///./taxease.db", connect_args={"check_same_thread": False})
 
-    # Import models so Base.metadata is aware of all table schemas
     import models
     Base.metadata.create_all(bind=app_engine)
+    _auto_migrate_columns(app_engine)
     sync_income_tax_laws(app_engine)
-    seed_compliance_deadlines(app_engine)
+    sync_compliance_deadlines(app_engine)
     return app_engine
 
 
 engine = init_xampp_mysql()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 
 def get_db():
     db = SessionLocal()
@@ -136,6 +130,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-
-

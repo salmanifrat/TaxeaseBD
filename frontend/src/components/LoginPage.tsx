@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { apiFetch, apiErrorMessage, saveSession, UserProfile } from '@/lib/api';
+import GoogleSignInButton from '@/components/GoogleSignInButton';
 
 interface LoginPageProps {
   onLogin: (user: UserProfile) => void;
@@ -51,6 +52,28 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
     // Explicit, honest guest mode: no backend call, no fabricated account -
     // clearly labeled so it never masquerades as a real logged-in session.
     onLogin({ email: 'guest@taxeasebd.app', name: 'Guest', entity_type: 'individual' });
+  };
+
+  const handleGoogleCredential = async (credential: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await apiFetch('/api/auth/google', {
+        method: 'POST',
+        body: JSON.stringify({ credential }),
+      });
+      if (!res.ok) {
+        setError(await apiErrorMessage(res, 'Google sign-in failed.'));
+        return;
+      }
+      const data = await res.json();
+      saveSession({ token: data.token, user: data.user });
+      onLogin(data.user as UserProfile);
+    } catch {
+      setError('Could not reach the TaxEaseBD server. Is the backend running on port 8000?');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -197,9 +220,12 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
             {/* Divider */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0' }}>
               <div style={{ flex: 1, height: 1, background: '#D1E8E2' }} />
-              <span style={{ fontSize: 12, color: '#5B7D91' }}>or continue as</span>
+              <span style={{ fontSize: 12, color: '#5B7D91' }}>or continue with</span>
               <div style={{ flex: 1, height: 1, background: '#D1E8E2' }} />
             </div>
+
+            {/* Google Sign-In */}
+            <GoogleSignInButton onCredential={handleGoogleCredential} text="signin_with" />
 
             {/* Guest */}
             <button

@@ -3,28 +3,40 @@
 import React, { useEffect, useState } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
 import { apiFetch } from '@/lib/api';
-import { 
-  CalendarDays, 
-  Send, 
-  Download, 
-  MessageSquare, 
-  Clock, 
-  CheckCircle2, 
-  X, 
+import {
+  CalendarDays,
+  Send,
+  Download,
+  Clock,
+  CheckCircle2,
+  X,
   Smartphone,
-  ShieldCheck
 } from 'lucide-react';
 
 interface Deadline {
-  id: number;
   title_en: string;
   title_bn: string;
   description_en: string;
   description_bn: string;
   due_date: string;
   category: string;
-  status: string;
+  status: 'urgent' | 'upcoming' | 'valid';
 }
+
+// Real day-count from today, matching what the backend used to compute
+// `status` - replaces the hardcoded "15 Days Left" that never changed.
+function daysUntil(dueDate: string): number {
+  const due = new Date(dueDate + 'T00:00:00');
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+const STATUS_TONE: Record<Deadline['status'], { border: string; badgeBg: string; badgeText: string; icon: typeof Clock }> = {
+  urgent: { border: 'border-amber-500/40', badgeBg: 'bg-amber-500/20', badgeText: 'text-amber-700', icon: Clock },
+  upcoming: { border: 'border-blue-500/40', badgeBg: 'bg-blue-500/20', badgeText: 'text-blue-700', icon: Clock },
+  valid: { border: 'border-emerald-500/40', badgeBg: 'bg-emerald-500/20', badgeText: 'text-emerald-700', icon: CheckCircle2 },
+};
 
 export default function CalendarView() {
   const { t, language } = useLanguage();
@@ -42,17 +54,23 @@ export default function CalendarView() {
       .catch(() => {});
   }, []);
 
-
   const handleDownloadIcs = () => {
+    // Built from the real next-occurrence deadlines, not a fixed date
+    // that would go stale exactly like the on-screen cards used to.
+    const toIcsDate = (d: string) => d.replace(/-/g, '') + 'T090000Z';
+    const events = deadlines
+      .map((d) => `BEGIN:VEVENT
+SUMMARY:${language === 'bn' ? d.title_bn : d.title_en}
+DESCRIPTION:${language === 'bn' ? d.description_bn : d.description_en}
+DTSTART:${toIcsDate(d.due_date)}
+DTEND:${toIcsDate(d.due_date)}
+END:VEVENT`)
+      .join('\n');
+
     const icsData = `BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//TaxEaseBD//NONSGML Compliance Calendar//EN
-BEGIN:VEVENT
-SUMMARY:NBR Mushak 9.1 Monthly VAT Return Deadline
-DESCRIPTION:File monthly VAT return at NBR eVAT portal to avoid penalty.
-DTSTART:20260815T090000Z
-DTEND:20260815T170000Z
-END:VEVENT
+${events}
 END:VCALENDAR`;
 
     const blob = new Blob([icsData], { type: 'text/calendar;charset=utf-8' });
@@ -98,59 +116,38 @@ END:VCALENDAR`;
 
       {/* Main Deadline Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Card 1: VAT Deadline */}
-        <div className="glass-card p-6 rounded-2xl border border-amber-500/40 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="px-2.5 py-1 rounded-md bg-amber-500/20 text-amber-700 font-mono text-xs font-bold border border-amber-500/30">
-              {t.calendar.vatDeadlineDate}
-            </span>
-            <Clock className="w-5 h-5 text-amber-500" />
-          </div>
+        {deadlines.length === 0 && (
+          <p className="text-sm text-slate-500">
+            {language === 'bn' ? 'কোনো আসন্ন সময়সীমা পাওয়া যায়নি।' : 'No upcoming deadlines found.'}
+          </p>
+        )}
+        {deadlines.map((d, i) => {
+          const tone = STATUS_TONE[d.status] ?? STATUS_TONE.valid;
+          const Icon = tone.icon;
+          const days = daysUntil(d.due_date);
+          return (
+            <div key={i} className={`glass-card p-6 rounded-2xl border relative overflow-hidden ${tone.border}`}>
+              <div className="flex items-center justify-between">
+                <span className={`px-2.5 py-1 rounded-md font-mono text-xs font-bold border ${tone.badgeBg} ${tone.badgeText} ${tone.border}`}>
+                  {d.category}
+                </span>
+                <Icon className={`w-5 h-5 ${tone.badgeText}`} />
+              </div>
 
-          <h3 className="text-lg font-bold text-black mt-4">{t.calendar.vatDeadlineTitle}</h3>
-          <p className="text-xs text-slate-700 mt-2 leading-relaxed">{t.calendar.vatDeadlineDesc}</p>
+              <h3 className="text-lg font-bold text-black mt-4">{language === 'bn' ? d.title_bn : d.title_en}</h3>
+              <p className="text-xs text-slate-700 mt-2 leading-relaxed">{language === 'bn' ? d.description_bn : d.description_en}</p>
 
-          <div className="mt-6 pt-4 border-t border-slate-300 flex items-center justify-between text-xs">
-            <span className="text-slate-600">Next Due: August 15, 2026</span>
-            <span className="font-bold text-amber-700">15 Days Left</span>
-          </div>
-        </div>
-
-        {/* Card 2: Trade License Deadline */}
-        <div className="glass-card p-6 rounded-2xl border border-emerald-500/40 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-700 font-mono text-xs font-bold border border-emerald-500/30">
-              {t.calendar.tradeDeadlineDate}
-            </span>
-            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-          </div>
-
-          <h3 className="text-lg font-bold text-black mt-4">{t.calendar.tradeDeadlineTitle}</h3>
-          <p className="text-xs text-slate-700 mt-2 leading-relaxed">{t.calendar.tradeDeadlineDesc}</p>
-
-          <div className="mt-6 pt-4 border-t border-slate-300 flex items-center justify-between text-xs">
-            <span className="text-slate-600">Status: Valid</span>
-            <span className="font-bold text-emerald-700">June 30, 2027</span>
-          </div>
-        </div>
-
-        {/* Card 3: Income Tax Return */}
-        <div className="glass-card p-6 rounded-2xl border border-blue-500/40 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="px-2.5 py-1 rounded-md bg-blue-500/20 text-blue-700 font-mono text-xs font-bold border border-blue-500/30">
-              {t.calendar.taxDeadlineDate}
-            </span>
-            <Clock className="w-5 h-5 text-blue-600" />
-          </div>
-
-          <h3 className="text-lg font-bold text-black mt-4">{t.calendar.taxDeadlineTitle}</h3>
-          <p className="text-xs text-slate-700 mt-2 leading-relaxed">{t.calendar.taxDeadlineDesc}</p>
-
-          <div className="mt-6 pt-4 border-t border-slate-300 flex items-center justify-between text-xs">
-            <span className="text-slate-600">Tax Day: Nov 30</span>
-            <span className="font-bold text-blue-700">122 Days Left</span>
-          </div>
-        </div>
+              <div className="mt-6 pt-4 border-t border-slate-300 flex items-center justify-between text-xs">
+                <span className="text-slate-600">{d.due_date}</span>
+                <span className={`font-bold ${tone.badgeText}`}>
+                  {days >= 0
+                    ? `${days} ${t.dashboard.deadlineDaysLeft}`
+                    : (language === 'bn' ? 'মেয়াদোত্তীর্ণ' : 'Overdue')}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
 
@@ -171,7 +168,7 @@ END:VCALENDAR`;
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">{t.calendar.modalTitle}</h3>
-                <p className="text-xs text-slate-500">Greenweb SMS & WhatsApp Gateway API</p>
+                <p className="text-xs text-slate-500">Greenweb SMS Gateway API</p>
               </div>
             </div>
 
@@ -180,18 +177,6 @@ END:VCALENDAR`;
               <span className="text-xs font-bold text-slate-700 block">{t.calendar.smsPreview}</span>
               <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-700 font-bengali text-xs text-emerald-300 leading-relaxed">
                 {t.calendar.smsText}
-              </div>
-            </div>
-
-            {/* WhatsApp Message Preview */}
-            <div className="space-y-2">
-              <span className="text-xs font-bold text-slate-700 block">{t.calendar.whatsappPreview}</span>
-              <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 font-bengali text-xs text-slate-200 leading-relaxed flex items-start space-x-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold text-emerald-400 block mb-1">TaxEaseBD Verified Bot:</span>
-                  <span>{t.calendar.smsText}</span>
-                </div>
               </div>
             </div>
 

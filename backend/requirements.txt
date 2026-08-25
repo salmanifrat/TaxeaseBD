@@ -1,14 +1,17 @@
 # TaxEaseBD backend dependencies.
 #
-# Kept deliberately small: no torch/transformers/langchain/faiss/groq.
+# Kept deliberately small: no torch/transformers/langchain/faiss.
 # Those belonged to an abandoned RAG experiment (backend/main.py used to be
 # that script) that was never wired into the actual API and pulled in
 # ~1.5GB of ML dependencies that frequently fail to install on Windows
-# without build tools. The live /api/chat endpoint is a small curated
-# knowledge base, not an LLM call, so none of that is needed to run the app.
+# without build tools.
 #
-# If you want to add real RAG (FAISS + embeddings + an LLM) back later,
-# reintroduce those packages then - don't install them speculatively.
+# `groq` below is the one exception: it's a lightweight, pure-Python HTTP
+# client (no ML weights, no heavy deps) used to generate plain-language
+# answers grounded in whatever main.py's retrieval logic already found in
+# income_tax_laws - see llm.py. It's optional at runtime: without a
+# GROQ_API_KEY in .env, /api/chat still works, just with a templated
+# answer instead of an LLM-phrased one.
 
 fastapi==0.128.8
 uvicorn==0.39.0
@@ -18,3 +21,11 @@ python-dotenv==1.2.1
 PyJWT==2.9.0
 pymysql==1.1.1
 cryptography==44.0.1
+groq==1.0.0
+
+# Verifies Google Identity Services ID tokens for "Continue with Google" -
+# pulls in google-auth's own crypto verification, not a full OAuth SDK.
+# `requests` is google-auth's HTTP transport, used only to fetch/cache
+# Google's public signing keys.
+google-auth==2.35.0
+requests==2.32.3

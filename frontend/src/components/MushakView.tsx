@@ -10,6 +10,7 @@ import {
   FileSpreadsheet,
   Upload,
   Loader2,
+  FileDown,
 } from 'lucide-react';
 
 interface Transaction {
@@ -162,6 +163,30 @@ export default function MushakView() {
     }
   };
 
+  // Downloads a ready-to-fill example matching exactly what handleFileUpload
+  // above expects (same header names, same column order), so "what format
+  // does my CSV need to be in?" has a concrete answer instead of just the
+  // prose hint in uploadError.
+  const handleDownloadSampleCsv = () => {
+    const header = ['date', 'invoiceNo', 'customerName', 'item', 'amount', 'vatRate', 'inputCredit'];
+    const sampleRows = [
+      ['2026-07-01', 'INV-2026-001', 'Chaldal Limited BIN: 008192019', 'E-Commerce Solution Maintenance', '200000', '15', '10000'],
+      ['2026-07-05', 'INV-2026-002', 'Apex Footwear Ltd', 'Retail Consulting Services', '75000', '15', '0'],
+    ];
+    const csv = [header, ...sampleRows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n');
+
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = window.URL.createObjectURL(blob);
+    link.setAttribute('download', 'TaxEaseBD_Mushak_Sample_Format.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(link.href);
+  };
+
   // Real CSV export (opens correctly in Excel) - this used to be
   // alert("...successfully generated & downloaded.") with no file produced.
   const handleExportCsv = () => {
@@ -269,6 +294,14 @@ export default function MushakView() {
           >
             <Upload className="w-4 h-4" />
             <span>{language === 'bn' ? 'CSV আপলোড করুন' : 'Upload CSV'}</span>
+          </button>
+          <button
+            onClick={handleDownloadSampleCsv}
+            title={language === 'bn' ? 'CSV আপলোডের জন্য প্রত্যাশিত ফরম্যাট দেখুন' : 'See the exact column format expected for CSV upload'}
+            className="px-4 py-2.5 rounded-xl btn-outline-accent font-semibold text-sm transition-all flex items-center space-x-2"
+          >
+            <FileDown className="w-4 h-4" />
+            <span>{t.mushak.sampleCsvBtn}</span>
           </button>
           <button
             onClick={handleExportPdf}

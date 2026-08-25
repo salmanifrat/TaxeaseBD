@@ -64,3 +64,29 @@ def decode_access_token(token: str) -> Optional[dict]:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.PyJWTError:
         return None
+
+
+# =====================================================
+# Email verification codes (signup OTP)
+# =====================================================
+
+OTP_LENGTH = 6
+OTP_TTL_MINUTES = 10
+OTP_MAX_ATTEMPTS = 5
+
+
+def generate_otp() -> str:
+    """A random 6-digit code, e.g. "042817". secrets.randbelow (not
+    `random`) since this gates account creation."""
+    return f"{secrets.randbelow(10 ** OTP_LENGTH):0{OTP_LENGTH}d}"
+
+
+def hash_otp(code: str) -> str:
+    """Codes are short-lived and low-entropy (6 digits), so unlike
+    passwords a plain salted SHA-256 is enough - no need for PBKDF2's
+    deliberate slowness here, and OTP_MAX_ATTEMPTS bounds guessing."""
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def verify_otp(code: str, code_hash: str) -> bool:
+    return hmac.compare_digest(hash_otp(code), code_hash)

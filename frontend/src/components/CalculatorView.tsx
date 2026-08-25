@@ -16,11 +16,14 @@ import {
   WifiOff,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-
-type EntityTypeKey = 'individual' | 'soleProp' | 'partnership' | 'llc';
-type BusinessCatKey = 'trading' | 'manufacturing' | 'service' | 'fcommerce';
-type ZoneKey = 'dscc' | 'dncc' | 'chittagong' | 'otherZone';
-type TaxCatKey = 'catGeneral' | 'catWomenSenior' | 'catDisabled' | 'catFreedomFighter';
+import {
+  EntityTypeKey,
+  BusinessCatKey,
+  ZoneKey,
+  TaxCatKey,
+  CalcResult,
+  TAX_STRATEGIES,
+} from '@/lib/taxStrategies';
 
 // Maps the UI's option keys to the backend's enum values (single source of
 // truth for the actual tax math now lives in backend/main.py).
@@ -42,16 +45,6 @@ const TAX_CAT_TO_API: Record<TaxCatKey, string> = {
   catDisabled: 'disabled_or_third_gender',
   catFreedomFighter: 'gazetted_freedom_fighter',
 };
-
-interface CalcResult {
-  income_tax_or_corporate_tax: number;
-  vat_or_turnover_tax: number;
-  vat_required: boolean;
-  trade_license_fee: number;
-  signboard_tax: number;
-  minimum_tax_applied: boolean;
-  total_estimated_liability: number;
-}
 
 export default function CalculatorView() {
   const { t, language } = useLanguage();
@@ -78,65 +71,22 @@ export default function CalculatorView() {
   // backend is briefly unreachable. It is never used silently: the UI
   // flags it with an "offline estimate" banner (see isOffline below) so
   // nobody mistakes it for the authoritative, single-source-of-truth result.
-  const computeLocalFallback = (): CalcResult => {
-    const taxFreeThresholds: Record<TaxCatKey, number> = {
-      catGeneral: 375000, catWomenSenior: 425000, catDisabled: 500000, catFreedomFighter: 525000,
-    };
-    const threshold = taxFreeThresholds[taxCategoryState];
-    const taxable = Math.max(0, annualTurnover - threshold);
-
-    let incomeOrCorporateTax = 0;
-    let minTaxApplied = false;
-
-    if (entityType === 'individual' || entityType === 'soleProp') {
-      let remaining = taxable;
-      let tax = 0;
-      const slabs: Array<[number, number]> = [[300000, 0.10], [400000, 0.15], [500000, 0.20], [2500000, 0.25], [Infinity, 0.30]];
-      for (const [width, rate] of slabs) {
-        const amt = Math.min(remaining, width);
-        tax += amt * rate;
-        remaining -= amt;
-        if (remaining <= 0) break;
-      }
-      if (taxable > 0 && tax < 5000) { tax = 5000; minTaxApplied = true; }
-      incomeOrCorporateTax = tax;
-    } else if (entityType === 'partnership') {
-      incomeOrCorporateTax = annualTurnover * 0.25;
-    } else {
-      incomeOrCorporateTax = annualTurnover * 0.275;
-    }
-
-    const tradeLicenseRates: Record<BusinessCatKey, Record<ZoneKey, number>> = {
-      trading: { dscc: 8000, dncc: 7500, chittagong: 6500, otherZone: 4000 },
-      manufacturing: { dscc: 15000, dncc: 14000, chittagong: 12000, otherZone: 8000 },
-      service: { dscc: 6000, dncc: 5500, chittagong: 5000, otherZone: 3500 },
-      fcommerce: { dscc: 3500, dncc: 3500, chittagong: 3000, otherZone: 2000 },
-    };
-    const tradeLicenseFee = tradeLicenseRates[businessCat][zone];
-    const signboardTax = signboardSize * signboardRatePerSqFt;
-    const isVatRequired = annualTurnover > 8000000;
-    const vatOrTurnoverTax = isVatRequired ? annualTurnover * 0.15 : annualTurnover * 0.03;
-
-    return {
-      income_tax_or_corporate_tax: incomeOrCorporateTax,
-      vat_or_turnover_tax: vatOrTurnoverTax,
-      vat_required: isVatRequired,
-      trade_license_fee: tradeLicenseFee,
-      signboard_tax: signboardTax,
-      minimum_tax_applied: minTaxApplied,
-      total_estimated_liability: incomeOrCorporateTax + vatOrTurnoverTax + tradeLicenseFee + signboardTax,
-    };
-  };
+  const computeLocalFallback = (): CalcResult =>
+    TAX_STRATEGIES[entityType]({
+      annualTurnover,
+      taxCategoryState,
+      businessCat,
+      zone,
+      signboardTax: signboardSize * signboardRatePerSqFt,
+    });
 
   const [result, setResult] = useState<CalcResult>(computeLocalFallback);
   const [isOffline, setIsOffline] = useState(false);
-  const [isCalculating, setIsCalculating] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
-      setIsCalculating(true);
       try {
         const res = await apiFetch('/api/calculate-tax', {
           method: 'POST',
@@ -156,8 +106,6 @@ export default function CalculatorView() {
       } catch {
         setResult(computeLocalFallback());
         setIsOffline(true);
-      } finally {
-        setIsCalculating(false);
       }
     }, 350);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
@@ -165,11 +113,14 @@ export default function CalculatorView() {
   }, [entityType, businessCat, zone, taxCategoryState, annualTurnover, signboardSize]);
 
   const incomeOrCorporateTax = result.income_tax_or_corporate_tax;
-  const vatOrTurnoverTax = result.vat_or_turnover_tax;
-  const tradeLicenseFee = result.trade_license_fee;
+  // Normalized to 0 right here, once, so every render below can treat
+  // these as plain numbers - no more per-line guessing about whether a
+  // given field happens to be null for the current entity type.
+  const vatOrTurnoverTax = result.vat_or_turnover_tax ?? 0;
+  const tradeLicenseFee = result.trade_license_fee ?? 0;
   const signboardTax = result.signboard_tax;
   const minTaxApplied = result.minimum_tax_applied;
-  const isVatRequired = result.vat_required;
+  const isVatRequired = result.vat_required ?? false;
   const totalLiability = result.total_estimated_liability;
 
   // Chart Data
@@ -237,7 +188,7 @@ export default function CalculatorView() {
               <select
                 id={entityTypeId}
                 value={entityType}
-                onChange={(e) => setEntityType(e.target.value as any)}
+                onChange={(e) => setEntityType(e.target.value as EntityTypeKey)}
                 className="w-full px-3 py-2.5 rounded-xl glass-input text-sm font-medium focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="individual" className="bg-slate-900 text-white">{t.calculator.individual}</option>
@@ -256,7 +207,7 @@ export default function CalculatorView() {
               <select
                 id={businessCatId}
                 value={businessCat}
-                onChange={(e) => setBusinessCat(e.target.value as any)}
+                onChange={(e) => setBusinessCat(e.target.value as BusinessCatKey)}
                 className="w-full px-3 py-2.5 rounded-xl glass-input text-sm font-medium focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="trading" className="bg-slate-900 text-white">{t.calculator.trading}</option>
@@ -275,7 +226,7 @@ export default function CalculatorView() {
               <select
                 id={cityCorpId}
                 value={zone}
-                onChange={(e) => setZone(e.target.value as any)}
+                onChange={(e) => setZone(e.target.value as ZoneKey)}
                 className="w-full px-3 py-2.5 rounded-xl glass-input text-sm font-medium focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="dscc" className="bg-slate-900 text-white">{t.calculator.dscc}</option>
@@ -295,7 +246,7 @@ export default function CalculatorView() {
                 id={taxCategory}
                 value={taxCategoryState}
                 disabled={entityType === 'partnership' || entityType === 'llc'}
-                onChange={(e) => setTaxCategoryState(e.target.value as any)}
+                onChange={(e) => setTaxCategoryState(e.target.value as TaxCatKey)}
                 className="w-full px-3 py-2.5 rounded-xl glass-input text-sm font-medium disabled:opacity-50"
               >
                 <option value="catGeneral" className="bg-slate-900 text-white">{t.calculator.catGeneral}</option>
@@ -445,6 +396,7 @@ export default function CalculatorView() {
                     ))}
                   </Pie>
                   <Tooltip 
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Recharts' own ValueType is a wide union (string | number | array); matching it exactly isn't worth it for a formatter that just does Number(value).
                     formatter={(value: any) => [`৳ ${Number(value).toLocaleString('en-IN')}`, 'Amount']}
                     contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
                   />

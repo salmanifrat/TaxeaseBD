@@ -89,7 +89,7 @@ class TestTaxEaseBDBackend(unittest.TestCase):
             top_source_url="https://nbr.gov.bd/uploads/acts/Income_tax_act_2023.pdf"
         )
         self.assertIn("12,500", response)
-        self.assertIn("Section 166", response)
+        self.assertIn("Section 163", response)  # minimum tax provision
         self.assertIn("Official NBR Gazette Source PDF", response)
 
     # ----------------------------------------------------
@@ -114,11 +114,15 @@ class TestTaxEaseBDBackend(unittest.TestCase):
     # 5. Direct Endpoint Execution Tests (/api/chat, /api/calculate-tax)
     # ----------------------------------------------------
     def test_chat_assistant_legal_query(self):
+        # Answer text is now LLM-phrased prose (Groq), so it no longer
+        # contains a fixed template string - assert on the structured
+        # `sources`/`grounded` fields instead, which stay deterministic.
         query = ChatQuery(message="Section 184 mandatory PSR proof of return", language="en")
         response = chat_assistant(query=query, db=self.db, user=None)
         self.assertIsNotNone(response.answer)
+        self.assertTrue(response.grounded)
         self.assertTrue(len(response.sources) > 0)
-        self.assertIn("Official NBR Gazette Source PDF", response.answer)
+        self.assertTrue(any("nbr.gov.bd" in s for s in response.sources))
 
     def test_chat_assistant_numerical_query(self):
         query = ChatQuery(message="Calculate tax for 6 lakh income", language="en")
