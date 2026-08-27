@@ -1860,6 +1860,119 @@ def search_laws(q: str = "", db: Session = Depends(database.get_db)):
     )
 
 
+# ─────────────────────────────────────────────────────────
+#  GOOGLE OAUTH 2.0  —  Login with Google
+# ─────────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID     = os.getenv("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI  = os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/api/auth/google/callback")
+FRONTEND_URL         = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+@app.get("/api/auth/google")
+def google_login():
+    """Redirect the browser to Google's OAuth consent screen."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google OAuth is not configured.")
+    import urllib.parse
+    params = urllib.parse.urlencode({
+        "client_id":     GOOGLE_CLIENT_ID,
+        "redirect_uri":  GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope":         "openid email profile",
+        "access_type":   "offline",
+        "prompt":        "select_account",
+    })
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"https://accounts.google.com/o/oauth2/v2/auth?{params}")
+
+
+@app.get("/api/auth/google/callback")
+def google_callback(code: str = None, error: str = None, db: Session = Depends(database.get_db)):
+    """
+    Google redirects here with ?code=... after user approves.
+    Exchange code → tokens → fetch user profile → issue JWT → redirect to frontend.
+    """
+    from fastapi.responses import RedirectResponse
+    import urllib.request, urllib.parse, json
+
+    if error or not code:
+        return RedirectResponse(url=f"{FRONTEND_URL}/?google_error=access_denied")
+
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        return RedirectResponse(url=f"{FRONTEND_URL}/?google_error=not_configured")
+
+    # 1. Exchange auth code for access token
+    try:
+        token_data = urllib.parse.urlencode({
+            "code":          code,
+            "client_id":     GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri":  GOOGLE_REDIRECT_URI,
+            "grant_type":    "authorization_code",
+        }).encode("utf-8")
+        token_req = urllib.request.Request(
+            "https://oauth2.googleapis.com/token",
+            data=token_data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with urllib.request.urlopen(token_req, timeout=10) as resp:
+            token_json = json.loads(resp.read().decode("utf-8"))
+        access_token = token_json.get("access_token")
+        if not access_token:
+            return RedirectResponse(url=f"{FRONTEND_URL}/?google_error=token_exchange_failed")
+    except Exception as e:
+        print(f"[Google OAuth] Token exchange error: {e}")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?google_error=token_exchange_failed")
+
+    # 2. Fetch Google user profile
+    try:
+        profile_req = urllib.request.Request(
+            "https://www.googleapis.com/oauth2/v2/userinfo",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+        with urllib.request.urlopen(profile_req, timeout=10) as resp:
+            profile = json.loads(resp.read().decode("utf-8"))
+        g_email = profile.get("email", "").strip().lower()
+        g_name  = profile.get("name", "Google User")
+        if not g_email:
+            return RedirectResponse(url=f"{FRONTEND_URL}/?google_error=no_email")
+    except Exception as e:
+        print(f"[Google OAuth] Profile fetch error: {e}")
+        return RedirectResponse(url=f"{FRONTEND_URL}/?google_error=profile_fetch_failed")
+
+    # 3. Find or create user in DB
+    user = db.query(models.User).filter(models.User.email == g_email).first()
+    if not user:
+        user = models.User(
+            email=g_email,
+            name=g_name,
+            password_hash=hash_password(os.urandom(32).hex()),  # random password — Google users don't use it
+            entity_type="individual",
+            is_verified=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        print(f"✅ [Google OAuth] New user registered via Google: {g_email}")
+    else:
+        print(f"✅ [Google OAuth] Existing user logged in via Google: {g_email}")
+
+    # 4. Issue JWT and redirect to frontend
+    jwt_token = create_access_token({"sub": str(user.id), "email": user.email})
+    user_payload = urllib.parse.quote(json.dumps({
+        "id":          user.id,
+        "email":       user.email,
+        "name":        user.name or g_name,
+        "entity_type": user.entity_type or "individual",
+        "e_tin":       user.e_tin or "",
+        "phone":       user.phone or "",
+    }))
+    return RedirectResponse(
+        url=f"{FRONTEND_URL}/?google_token={jwt_token}&google_user={user_payload}"
+    )
+
+
 @app.get("/")
 def root():
 

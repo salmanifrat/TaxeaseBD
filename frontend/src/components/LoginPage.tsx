@@ -286,6 +286,28 @@ export default function LoginPage({ onLogin, onGoSignup, onGoHome }: LoginPagePr
               {loading ? 'Logging in…' : 'Log In →'}
             </button>
 
+            {/* ── Google Sign-In ── */}
+            <a
+              href="http://localhost:8000/api/auth/google"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                background: '#ffffff', color: '#3c4043', border: '1.5px solid #dadce0',
+                borderRadius: 12, padding: '13px', fontSize: 14, fontWeight: 600,
+                cursor: 'pointer', textDecoration: 'none', transition: 'all 0.2s',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.08)',
+              }}
+              onMouseOver={e => { e.currentTarget.style.boxShadow = '0 2px 10px rgba(0,0,0,0.15)'; e.currentTarget.style.borderColor = '#4285f4'; }}
+              onMouseOut={e => { e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.08)'; e.currentTarget.style.borderColor = '#dadce0'; }}
+            >
+              <svg width="18" height="18" viewBox="0 0 48 48">
+                <path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.2 33.6 29.6 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l6-6C34.4 6.5 29.5 4.5 24 4.5 12.7 4.5 3.5 13.7 3.5 25S12.7 45.5 24 45.5c11 0 20-8 20-20 0-1.2-.1-2.3-.5-5.5z"/>
+                <path fill="#34A853" d="M6.3 14.7l7 5.1C15.1 16.5 19.2 14 24 14c3 0 5.8 1.1 7.9 3l6-6C34.4 6.5 29.5 4.5 24 4.5c-7.7 0-14.3 4.4-17.7 10.2z"/>
+                <path fill="#FBBC05" d="M24 45.5c5.4 0 10.2-1.8 13.9-4.9l-6.4-5.3C29.6 37 27 38 24 38c-5.6 0-10.3-3.8-12-9l-7 5.4C8.5 41.2 15.7 45.5 24 45.5z"/>
+                <path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.8 2.3-2.3 4.3-4.3 5.7l6.4 5.3c3.8-3.5 6.1-8.7 6.1-14.5 0-1.2-.1-2.3-.5-5z"/>
+              </svg>
+              Continue with Google
+            </a>
+
             {/* Divider */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '4px 0' }}>
               <div style={{ flex: 1, height: 1, background: '#D1E8E2' }} />

@@ -26,6 +26,32 @@ export default function Home() {
   // Restore a previous session on load, instead of always starting logged out,
   // and drop the returning user straight back into the dashboard.
   useEffect(() => {
+    // Handle Google OAuth redirect — ?google_token=...&google_user=...
+    const params = new URLSearchParams(window.location.search);
+    const googleToken = params.get('google_token');
+    const googleUser  = params.get('google_user');
+    const googleError = params.get('google_error');
+
+    if (googleToken && googleUser) {
+      try {
+        const parsedUser: UserProfile = JSON.parse(decodeURIComponent(googleUser));
+        // Save session exactly like normal login
+        const { saveSession } = require('@/lib/api');
+        saveSession({ token: googleToken, user: parsedUser });
+        setUser(parsedUser);
+        setScreen('app');
+        // Clean URL
+        window.history.replaceState({}, '', '/');
+        return;
+      } catch {
+        // Fall through to normal session restore
+      }
+    }
+
+    if (googleError) {
+      window.history.replaceState({}, '', '/');
+    }
+
     const session = loadSession();
     if (session?.user) {
       setUser(session.user);
