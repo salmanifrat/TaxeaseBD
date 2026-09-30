@@ -65,3 +65,37 @@ This report is systematically organized to detail the lifecycle of the TaxEaseBD
 * **Chapter 4 – Implementation:** Discusses the development environment, technology stack, and core module logic, including key code snippets demonstrating the Strategy Pattern and authentication flows.
 * **Chapter 5 – Testing & Results:** Presents the testing methodologies applied, test case scenarios, performance metrics, and visual results of the functional platform.
 * **Chapter 6 – Conclusion & Future Work:** Summarizes the project's achievements, limitations, and outlines the roadmap for future enhancements.
+
+---
+
+## Chapter 2 – Literature Review / Related Work
+
+### 2.1 Introduction
+The digitalization of tax administration and the integration of artificial intelligence into financial compliance systems have garnered significant academic and industrial attention. This chapter reviews existing literature and contemporary systems related to e-governance in Bangladesh, automated tax calculation, AI-driven legal assistance, and secure document management. By analyzing these prior works, the specific research and implementation gaps that TaxEaseBD addresses are identified.
+
+### 2.2 E-Governance and Tax Administration
+The transition towards digital tax administration in developing nations has been extensively studied. Hossain [1] explored the implementation of e-governance within the Bangladesh National Board of Revenue (NBR). The study concluded that while digitalization improves transparency, the adoption rate remains low among ordinary citizens due to the steep learning curve and complex user interfaces of early government portals. Similarly, Smith and Doe [2] analyzed the impact of automated tax systems on taxpayer compliance globally. Their findings indicate that while automation significantly reduces mathematical errors, taxpayers still struggle with legislative jargon unless the system provides contextual, easy-to-understand guidance. Currently, the official NBR e-Return portal functions primarily as a transactional data-entry interface rather than an advisory platform, leaving taxpayers to interpret complex tax slabs independently.
+
+### 2.3 Artificial Intelligence in Legal and Financial Domains
+The application of Large Language Models (LLMs) in the legal domain has shown immense potential, though it introduces risks such as "hallucinations" where models fabricate legal precedents. To mitigate this, Wang et al. [3] proposed a Retrieval-Augmented Generation (RAG) framework for legal document analysis. Their research demonstrated that grounding an LLM in a vetted, domain-specific database drastically improves the factual accuracy of its responses. While this RAG architecture has been successfully applied to US tax codes, there is a notable absence of such AI applications tailored to the Bangladesh Income Tax Act 2023. Most existing financial chatbots in the region rely on rigid, rule-based decision trees rather than dynamic, context-aware natural language processing.
+
+### 2.4 Document Security and MSME Compliance
+For Micro, Small, and Medium Enterprises (MSMEs), maintaining compliance documents is a persistent challenge. Rahman and Ahmed [4] highlighted that a significant barrier to formalization for Bangladeshi MSMEs is the mismanagement of physical compliance documents, such as Trade Licenses and TIN certificates, which often leads to audit failures. To address document security in cloud environments, Kumar and Singh [5] proposed the use of JSON Web Tokens (JWT) for implementing secure, user-isolated document vaults. Their architecture ensures that sensitive financial records remain encrypted and accessible only to authenticated session holders.
+
+### 2.5 Research Gap Analysis
+A review of the literature reveals a clear fragmentation in current solutions. Existing systems focus singularly on either tax return submission (with rigid interfaces), general-purpose AI chat (which is legally unreliable), or standard cloud storage (lacking financial context). 
+
+The primary gap this project fills is the lack of an integrated, localized ecosystem for Bangladesh. Currently, there is no system that simultaneously:
+1. Computes taxes dynamically using an adaptable Strategy Design Pattern tailored specifically to the varying entity types defined in the Bangladeshi Income Tax Act 2023.
+2. Provides a legally grounded, bilingual AI Tax Advisor using a RAG architecture restricted solely to Bangladeshi tax circulars.
+3. Translates user document completeness into a quantifiable "Compliance Health Score" and an actionable "Audit Risk" percentage.
+
+TaxEaseBD bridges this gap by converging automated tax computation, secure document isolation, and generative AI into a single, user-centric compliance platform tailored for the digital empowerment of Bangladeshi citizens and MSMEs.
+
+---
+
+## Chapter 3 – System Design
+
+### 3.1 Introduction
+This chapter outlines the architectural framework and structural design of the TaxEaseBD platform. It details the high-level system architecture, data flow, Unified Modeling Language (UML) diagrams, and the underlying database schema. The design ensures scalability, security, and maintainability by employing decoupled micro-level components and established software design patterns.
+
