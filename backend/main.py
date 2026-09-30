@@ -276,7 +276,10 @@ def get_current_user_optional(
     user_id = payload.get("sub")
     if not user_id:
         return None
-    return db.query(models.User).filter(models.User.id == int(user_id)).first()
+    try:
+        return db.query(models.User).filter(models.User.id == int(user_id)).first()
+    except (ValueError, TypeError):
+        return None
 
 
 def get_current_user_required(
@@ -1947,9 +1950,9 @@ def google_callback(code: str = None, error: str = None, db: Session = Depends(d
         user = models.User(
             email=g_email,
             name=g_name,
-            password_hash=hash_password(os.urandom(32).hex()),  # random password — Google users don't use it
+            password_hash=hash_password(os.urandom(32).hex()),
             entity_type="individual",
-            is_verified=True,
+            is_email_verified=1,
         )
         db.add(user)
         db.commit()
@@ -1959,13 +1962,13 @@ def google_callback(code: str = None, error: str = None, db: Session = Depends(d
         print(f"✅ [Google OAuth] Existing user logged in via Google: {g_email}")
 
     # 4. Issue JWT and redirect to frontend
-    jwt_token = create_access_token({"sub": str(user.id), "email": user.email})
+    jwt_token = create_access_token(user.id)
     user_payload = urllib.parse.quote(json.dumps({
         "id":          user.id,
         "email":       user.email,
         "name":        user.name or g_name,
         "entity_type": user.entity_type or "individual",
-        "e_tin":       user.e_tin or "",
+        "e_tin":       user.tin or "",
         "phone":       user.phone or "",
     }))
     return RedirectResponse(
